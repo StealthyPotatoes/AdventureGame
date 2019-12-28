@@ -1,0 +1,3 @@
+/home/kacper/programs/game/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/home/kacper/programs/game/cmake-build-debug/CMakeFiles/game.dir
+/home/kacper/programs/game/cmake-build-debug/CMakeFiles/edit_cache.dir

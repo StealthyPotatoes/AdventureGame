@@ -1,0 +1,20 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/kacper/programs/game/main.c
+X11/Xlib.h
+-
+stdio.h
+-
+stdlib.h
+-
+string.h
+-
+X11/Xutil.h
+-
+
