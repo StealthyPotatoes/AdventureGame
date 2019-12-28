@@ -7,6 +7,7 @@
 
 #define TEXTHEIGHT 10
 #define TEXTWIDTH 6
+#define BILLION 1E9
 
 
 static const char *event_names[] = {
@@ -82,6 +83,8 @@ Window w;
 GC gc[4];
 XColor xc_grey, xc_red, xc_green;
 Colormap c;
+int oldPlayerX = 0;
+int oldPlayerY = 0;
 
 char keyPressed(XEvent e);
 
@@ -98,6 +101,8 @@ int menuLoop();
 int gameLoop();
 
 int editorLoop();
+
+Bool CheckIfKeyRelease(Display *d, XEvent *e, XPointer arg);
 
 
 int main(void) {
@@ -452,7 +457,6 @@ int gameLoop() {
         XNextEvent(d, &e);
         printf("got event: %s\n", event_names[e.type]);     //Debug tool
 
-
         if (e.type == KeyPress) {
             clock_gettime(CLOCK_REALTIME, &start);
             keyDown = 1;
@@ -463,14 +467,39 @@ int gameLoop() {
                 XCloseDisplay(d);
                 return 0;
             }
-            if (key == "w")
-                playerY -= 1;
-            // MAP THIS OUT
+            if ((key == 'w') || (key == 's') || (key == 'a') || (key == 'd')) {
 
+                while(XCheckIfEvent(d, &e, CheckIfKeyRelease, &key) == False) {
+
+                    clock_gettime(CLOCK_REALTIME, &end);
+                    double timeDiff = (end.tv_sec - start.tv_sec) + ((end.tv_nsec - start.tv_nsec) / BILLION);
+                    printf("timediff = %f\n", timeDiff);
+
+                    if (timeDiff > 0.01) {
+                        if (key == 'w')
+                            playerY -= 1;
+                        else if (key == 's')
+                            playerY += 1;
+                        else if (key == 'a')
+                            playerX -= 1;
+                        else
+                            playerX += 1;
+
+                        clock_gettime(CLOCK_REALTIME, &start);
+                        drawPlayer(playerX, playerY);
+                    }
+                }
+            }
         }
-
-        // if (e.type == keyRelease)
     }
+}
+
+Bool CheckIfKeyRelease(Display *display, XEvent *event, XPointer arg) {
+
+    if (event->type == 3 && (keyPressed(*event) == arg[0]))
+        return True;
+    else
+        return False;
 }
 
 void drawLevel(struct Box *boxes, int firstFreeBox) {
@@ -484,10 +513,15 @@ void drawLevel(struct Box *boxes, int firstFreeBox) {
 
 void drawPlayer(int x, int y) {
 
+    if (oldPlayerX && oldPlayerY)
+        XClearArea(d, w, oldPlayerX, oldPlayerY, TEXTWIDTH * 3, TEXTHEIGHT * 4, False);
+
     for (int i = 0; i < 7; i++) {
         XDrawString(d, w, gc[0], (player[i].x + x), (player[i].y + y), &player[i].character, 1);
     }
 
+    oldPlayerX = x;
+    oldPlayerY = y;
 }
 
 
