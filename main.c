@@ -428,12 +428,10 @@ int gameLoop() {
     int playerY = 400;
     struct timespec start, end;
     int keyDown = 0;
-    /*
-     * clock_gettime(CLOCK_REALTIME, &start)
-     *
-     * double time_spent = (end.tv_sec - start.tv_sec) +
-     *                      (end.tv_nsec - start.tv_nsec) / 1000000000.0;
-     */
+    int stopW = 0;
+    int stopS = 0;
+    int stopA = 0;
+    int stopD = 0;
 
     //Read level from file and save to boxes[]
     FILE *f = fopen("level.data", "rb");
@@ -475,15 +473,75 @@ int gameLoop() {
                     double timeDiff = (end.tv_sec - start.tv_sec) + ((end.tv_nsec - start.tv_nsec) / BILLION);
                     printf("timediff = %f\n", timeDiff);
 
-                    if (timeDiff > 0.01) {
-                        if (key == 'w')
-                            playerY -= 1;
-                        else if (key == 's')
-                            playerY += 1;
-                        else if (key == 'a')
-                            playerX -= 1;
-                        else
-                            playerX += 1;
+                    /*
+                                * Bottom edge of box
+                                *
+                                *(box.x, box.y) to (box.x + WIDTH, box.y)
+                                *
+                                * playerX and PlayerY are from top left of player
+                                * Box.x and box.y are from bottom left of box
+                                *
+                                * playerX, PlayerY
+                                */
+
+                    if (timeDiff > 0.005) {
+                        if (key == 'w') {
+                            stopW = 0;
+
+                            for (int i = 0; i < firstFreeBox; i++) {
+                                if (boxes[i].y == playerY &&
+                                    boxes[i].x < (playerX + TEXTWIDTH * 3) &&
+                                    (boxes[i].x + TEXTWIDTH) > playerX) {
+                                    stopW = 1;     // HELP
+                                }
+                            }
+                            if (stopW == 0)
+                                playerY -= 1;
+                        }
+
+                        else if (key == 's') {
+                            stopS = 0;
+
+                            for (int i = 0; i < firstFreeBox; i++) {        //SFJK:LKJDSF:LKJSDF:LKJDSF
+                                if ((boxes[i].y - TEXTHEIGHT) == (playerY + TEXTHEIGHT * 4) &&
+                                    boxes[i].x < (playerX + TEXTWIDTH * 3) &&
+                                    (boxes[i].x + TEXTWIDTH) > playerX) {
+                                    stopS = 1;     // HELP
+                                }
+                            }
+                            if (stopS == 0)
+                                playerY += 1;
+                        }
+
+                        else if (key == 'a') {
+                            stopA = 0;
+
+                            for (int i = 0; i < firstFreeBox; i++) {
+                                if ((boxes[i].x + TEXTWIDTH) == playerX &&
+                                    boxes[i].y > playerY &&
+                                    (boxes[i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
+                                    stopA = 1;     // HELP
+                                }
+                            }
+                            if (stopA == 0)
+                                playerX -= 1;
+                        }
+
+
+                        else if (key == 'd'){
+                            stopD = 0;
+
+                            for (int i = 0; i < firstFreeBox; i++) {
+                                if (boxes[i].x == (playerX + TEXTWIDTH * 3) &&
+                                    boxes[i].y > playerY &&
+                                    (boxes[i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
+                                    stopD = 1;     // HELP
+                                }
+                            }
+                            if (stopD == 0)
+                                playerX += 1;
+                        }
+
 
                         clock_gettime(CLOCK_REALTIME, &start);
                         drawPlayer(playerX, playerY);
@@ -539,9 +597,9 @@ void drawPlayer(int x, int y) {
  *
  * DONE - add player sprite
  *
- * add movement - biggie - xcleararea can create event?
+ * DONE - add movement - biggie - xcleararea can create event?
  *
- * collision detection
+ * DONE  - collision detection
  *
  * detect type on collision, teleport
  *
