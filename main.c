@@ -482,7 +482,7 @@ int gameLoop() {
     int firstFreeBox[35] = {0};
     int playerX = 500;
     int playerY = 400;
-    struct timespec start, end;
+    struct timespec start, end, diff;
     int stopW = 0;
     int stopS = 0;
     int stopA = 0;
@@ -496,8 +496,8 @@ int gameLoop() {
     //get firstFreeBox from last element of array
     for (int i = 0; i < 35; i++) {
         for (int j = 5000; j >= 0; --j) {
-            if (boxes[part][j].x != 0) {
-                firstFreeBox[part] = boxes[part][j].x;
+            if (boxes[i][j].x != 0) {
+                firstFreeBox[i] = boxes[i][j].x;
                 break;
             }
         }
@@ -524,78 +524,113 @@ int gameLoop() {
             }
             if ((key == 'w') || (key == 'a') || (key == 's') || (key == 'd')) {
 
+                //Loop until keyRelease event of that key
                 while (XCheckIfEvent(d, &e, CheckIfKeyRelease, &key) == False) {
+
+                    //  Only want player to move every 0.005s, so calculate time from last move, and sleep if less
+                    //  than 0.005s
                     clock_gettime(CLOCK_REALTIME, &end);
                     double timeDiff = (end.tv_sec - start.tv_sec) + ((end.tv_nsec - start.tv_nsec) / BILLION);
-                    printf("timediff = %f\n", timeDiff);
+                    diff.tv_nsec = 0.005*BILLION - (end.tv_nsec - start.tv_nsec);
 
                     /*
                                 * Bottom edge of box
                                 *
                                 *(box.x, box.y) to (box.x + WIDTH, box.y)
-                                *
+                                *{
                                 * playerX and PlayerY are from top left of player
                                 * Box.x and box.y are from bottom left of box
                                 *
                                 * playerX, PlayerY
                                 */
 
-                    if (timeDiff > 0.005) {
-                        if (key == 'w') {
+                    if (timeDiff < 0.005)
+                        nanosleep(&diff, &diff);
 
-                            stopW = 0;
-                            for (int i = 0; i < firstFreeBox[part]; i++) {
-                                if (boxes[part][i].y == playerY &&
-                                    boxes[part][i].x < (playerX + TEXTWIDTH * 3) &&
-                                    (boxes[part][i].x + TEXTWIDTH) > playerX) {
-                                    stopW = 1;
-                                }
-                            }
-                            if (stopW == 0)
-                                playerY -= 1;
+                    //Check if player is at borders, and switch scene
+                    if (playerX == 1000) {
+                        part += 1;
+                        playerX = 10;
+                        playerY = 400;
+                        drawLevel(boxes[part], firstFreeBox[part]);
+                        drawPlayer(playerX, playerY);
 
-                        } else if (key == 's') {
+                    } else if (playerX == 0) {
+                        part -= 1;
+                        playerX = 990;
+                        playerY = 400;
+                        drawLevel(boxes[part], firstFreeBox[part]);
+                        drawPlayer(playerX, playerY);
 
-                            stopS = 0;
-                            for (int i = 0; i < firstFreeBox[part]; i++) {
-                                if ((boxes[part][i].y - TEXTHEIGHT) == (playerY + TEXTHEIGHT * 4) &&
-                                    boxes[part][i].x < (playerX + TEXTWIDTH * 3) &&
-                                    (boxes[part][i].x + TEXTWIDTH) > playerX) {
-                                    stopS = 1;
-                                }
-                            }
-                            if (stopS == 0)
-                                playerY += 1;
+                    } else if (playerY == 800) {
+                        part += 7;
+                        playerY = 10;
+                        playerX = 500;
+                        drawLevel(boxes[part], firstFreeBox[part]);
+                        drawPlayer(playerX, playerY);
 
-                        } else if (key == 'a') {
-                            stopA = 0;
-                            for (int i = 0; i < firstFreeBox[part]; i++) {
-                                if ((boxes[part][i].x + TEXTWIDTH) == playerX &&
-                                    boxes[part][i].y > playerY &&
-                                    (boxes[part][i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
-                                    stopA = 1;
-                                }
-                            }
-                            if (stopA == 0)
-                                playerX -= 1;
-
-                        } else if (key == 'd') {
-                            stopD = 0;
-                            for (int i = 0; i < firstFreeBox[part]; i++) {
-                                if (boxes[part][i].x == (playerX + TEXTWIDTH * 3) &&
-                                    boxes[part][i].y > playerY &&
-                                    (boxes[part][i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
-                                    stopD = 1;
-                                }
-                            }
-                            if (stopD == 0)
-                                playerX += 1;
-                        }
-
-
-                        clock_gettime(CLOCK_REALTIME, &start);
+                    } else if (playerY == 0) {
+                        part -= 7;
+                        playerY = 770;
+                        playerX = 500;
+                        drawLevel(boxes[part], firstFreeBox[part]);
                         drawPlayer(playerX, playerY);
                     }
+
+                    if (key == 'w') {
+
+                        stopW = 0;
+                        for (int i = 0; i < firstFreeBox[part]; i++) {
+                            if (boxes[part][i].y == playerY &&
+                                boxes[part][i].x < (playerX + TEXTWIDTH * 3) &&
+                                (boxes[part][i].x + TEXTWIDTH) > playerX) {
+                                stopW = 1;
+                            }
+                        }
+                        if (stopW == 0)
+                            playerY -= 1;
+
+                    } else if (key == 's') {
+
+                        stopS = 0;
+                        for (int i = 0; i < firstFreeBox[part]; i++) {
+                            if ((boxes[part][i].y - TEXTHEIGHT) == (playerY + TEXTHEIGHT * 4) &&
+                                boxes[part][i].x < (playerX + TEXTWIDTH * 3) &&
+                                (boxes[part][i].x + TEXTWIDTH) > playerX) {
+                                stopS = 1;
+                            }
+                        }
+                        if (stopS == 0)
+                            playerY += 1;
+
+                    } else if (key == 'a') {
+                        stopA = 0;
+                        for (int i = 0; i < firstFreeBox[part]; i++) {
+                            if ((boxes[part][i].x + TEXTWIDTH) == playerX &&
+                                boxes[part][i].y > playerY &&
+                                (boxes[part][i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
+                                stopA = 1;
+                            }
+                        }
+                        if (stopA == 0)
+                            playerX -= 1;
+
+                    } else if (key == 'd') {
+                        stopD = 0;
+                        for (int i = 0; i < firstFreeBox[part]; i++) {
+                            if (boxes[part][i].x == (playerX + TEXTWIDTH * 3) &&
+                                boxes[part][i].y > playerY &&
+                                (boxes[part][i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
+                                stopD = 1;
+                            }
+                        }
+                        if (stopD == 0)
+                            playerX += 1;
+                    }
+
+
+                    clock_gettime(CLOCK_REALTIME, &start);
+                    drawPlayer(playerX, playerY);
                 }
             }
         }
