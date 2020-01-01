@@ -10,7 +10,7 @@
 #define BILLION 1E9
 
 
-static const char *event_names[] = {
+static const char *event_names[] = {        //List copied from some site, lost link :/
         "",
         "",
         "KeyPress",
@@ -48,7 +48,7 @@ static const char *event_names[] = {
         "MappingNotify"
 };
 
-char title[][100] = {       // ASCII Gen = http://patorjk.com/software/taag/
+const char title[][100] = {       // ASCII Gen = http://patorjk.com/software/taag/
         "  __ _  ___ _ __   ___ _ __(_) ___    __ _  __ _ _ __ ___   ___",
         " / _` |/ _ \\ '_ \\ / _ \\ '__| |/ __|  / _` |/ _` | '_ ` _ \\ / _ \\",
         "| (_| |  __/ | | |  __/ |  | | (__  | (_| | (_| | | | | | |  __/",
@@ -60,7 +60,7 @@ struct Button {
     int x, y, width, height;
 };
 
-struct Buttons {
+struct MenuButtons {
     struct Button start, editor;
 };
 
@@ -69,15 +69,15 @@ struct Box {
     char character;
 };
 
-struct Box player[7] = {{6,  10, 0, 0, 79},
-                        {6,  20, 0, 0, 124},
-                        {6,  30, 0, 0, 124},
-                        {12, 40, 0, 0, 92},
-                        {12, 20, 0, 0, 92},
-                        {0,  40, 0, 0, 47},
-                        {0,  20, 0, 0, 47}};
+const struct Box player[7] = {{6,  10, 0, 0, 79},
+                             {6,  20, 0, 0, 124},
+                             {6,  30, 0, 0, 124},
+                             {12, 40, 0, 0, 92},
+                             {12, 20, 0, 0, 92},
+                             {0,  40, 0, 0, 47},
+                             {0,  20, 0, 0, 47}};
 
-struct Buttons buttons;
+struct MenuButtons buttons;
 Display *d;
 Window w;
 GC gc[4];
@@ -85,6 +85,7 @@ XColor xc_grey, xc_red, xc_green;
 Colormap c;
 int oldPlayerX = 0;
 int oldPlayerY = 0;
+int part = 0;        // The part of the level being edited
 
 char keyPressed(XEvent e);
 
@@ -93,6 +94,8 @@ void drawMenu();
 void drawLevel(struct Box *boxes, int firstFreeBox);
 
 void drawEditor(struct Box *boxes, int firstFreeBox, int drawType, int colour);
+
+void showMap(int firstFreeBox[]);
 
 void drawPlayer(int x, int y);
 
@@ -111,11 +114,6 @@ int main(void) {
 
     d = XOpenDisplay(NULL);
 
-    if (d == NULL) {
-        printf("Cannot open d\n");
-        exit(0);
-    }
-
     int screen = DefaultScreen(d);
     int black = BlackPixel(d, screen);
     int white = WhitePixel(d, screen);
@@ -125,7 +123,7 @@ int main(void) {
 
     XSelectInput(d, w,
                  StructureNotifyMask | KeyPressMask | ExposureMask | KeyReleaseMask | ButtonPressMask |
-                 ButtonMotionMask); // NOLINT(hicpp-signed-bitwise)
+                 ButtonMotionMask);
     XMapWindow(d, w);
 
     gc[0] = XCreateGC(d, w, 0, 0);
@@ -149,7 +147,7 @@ int main(void) {
     XAllocColor(d, c, &xc_green);
     XSetForeground(d, gc[3], xc_green.pixel);
 
-    while (1)       //Wait for w to be mapped before starting main loop
+    while (1)       //Wait for window to be mapped before starting main loop
     {
         XEvent e;
         XNextEvent(d, &e);
@@ -178,19 +176,14 @@ int main(void) {
     }
 }
 
-
 char keyPressed(XEvent e) {      //Returns key pressed
 
-    char letter[32];
-    for (int i = 0; i < strlen(letter); i++)
-        letter[i] = "";
-
+    char letter[1];
     KeySym key = 0;
     XLookupString(&e.xkey, letter, sizeof(char), &key, 0);
     printf("key = %d\n", *letter);
     return letter[0];
 }
-
 
 void drawMenu() {      //Displays menu, including buttons and text
     XClearWindow(d, w);
@@ -227,10 +220,8 @@ void drawMenu() {      //Displays menu, including buttons and text
     char textTest[100] = "If text looks off center, it's because it probably is.";
     XDrawString(d, w, gc[0], 0, 12, textTest, strlen(textTest));
 
-    //XDrawLine(d, w, gc[0], 200, 100, 200, 0);
     XFlush(d);
 }
-
 
 int menuLoop() {
     while (1)       //Main loop
@@ -262,7 +253,6 @@ int menuLoop() {
     }
 }
 
-
 int editorLoop() {
 
     XClearWindow(d, w);
@@ -271,20 +261,21 @@ int editorLoop() {
     char key = 0;
     int drawType = 0;       //  0 = draw, 1 = clear
     int boxX, boxY;
-    struct Box boxes[5000];
-
+    struct Box boxes[35][5000];
     int colour = 0;
-    int firstFreeBox = 0;
-    for (int i = 0; i < 5000; i++) {        //clear boxes array
-        boxes[i].x = 0;
-        boxes[i].y = 0;
-        boxes[i].character = '\0';
+
+    int firstFreeBox[35] = {0};
+    for (int i = 0; i < 35; i++) {
+        for (int j = 0; j < 5000; j++) {        //clear boxes array
+            boxes[i][j].x = 0;
+            boxes[i][j].y = 0;
+            boxes[i][j].character = '\0';
+        }
     }
 
+    while (1) {      //Main loop
 
-    while (1)       //Main loop
-    {
-        drawEditor(boxes, firstFreeBox, drawType, colour);
+        drawEditor(boxes[part], firstFreeBox[part], drawType, colour);
         XEvent e;
         XNextEvent(d, &e);
         printf("got event: %s\n", event_names[e.type]);     //Debug tool
@@ -294,9 +285,11 @@ int editorLoop() {
 
             if (key == 27) {
 
-                boxes[firstFreeBox].x = firstFreeBox;  //Append firstFreeBox to list, so it can be read later
+                for (int i = 0; i < 35; i++) {
+                    boxes[i][firstFreeBox[i]].x = firstFreeBox[i];  //Append firstFreeBox to list, so it can be read later
+                }
                 FILE *f = fopen("level.data", "wb");
-                fwrite(boxes, sizeof(struct Box), 5000, f);
+                fwrite(boxes, sizeof(struct Box), sizeof(boxes) / sizeof(struct Box), f);
                 fclose(f);
 
                 system("xset r on");
@@ -314,24 +307,32 @@ int editorLoop() {
                     colour = 0;
 
                 XClearWindow(d, w);
+
             } else if (950 < e.xbutton.x && e.xbutton.x < 1000 &&  //Switch between clear and draw
                        0 < e.xbutton.y && e.xbutton.y < 50) {
                 drawType = !drawType;
                 XClearWindow(d, w);
+
+            } else if (850 < e.xbutton.x && e.xbutton.x < 900 &&
+                       0 < e.xbutton.y && e.xbutton.y < 50) {
+                showMap(firstFreeBox);
+                XClearWindow(d, w);
+
             } else if (drawType == 0) {           //Try to find closest box to click ??
 
                 boxX = ((e.xbutton.x - 2) / TEXTWIDTH) * TEXTWIDTH;
                 boxY = ((e.xbutton.y + 5) / TEXTHEIGHT) * TEXTHEIGHT;
 
-                for (int i = 0; i <= firstFreeBox; i++) {
-                    if (boxes[i].x == boxX && boxes[i].y == boxY) {
+                for (int i = 0; i <= firstFreeBox[part]; i++) {
+                    if (boxes[part][i].x == boxX && boxes[part][i].y == boxY) {
                         break;
-                    } else if (i == firstFreeBox) {
-                        boxes[firstFreeBox].x = boxX;
-                        boxes[firstFreeBox].y = boxY;
-                        boxes[firstFreeBox].character = key;
-                        boxes[firstFreeBox].gc = colour;
-                        firstFreeBox += 1;
+
+                    } else if (i == firstFreeBox[part]) {
+                        boxes[part][firstFreeBox[part]].x = boxX;
+                        boxes[part][firstFreeBox[part]].y = boxY;
+                        boxes[part][firstFreeBox[part]].character = key;
+                        boxes[part][firstFreeBox[part]].gc = colour;
+                        firstFreeBox[part] += 1;
                         break;
                     }
                 }
@@ -340,10 +341,10 @@ int editorLoop() {
                 boxX = ((e.xbutton.x - 2) / TEXTWIDTH) * TEXTWIDTH;
                 boxY = ((e.xbutton.y + 5) / TEXTHEIGHT) * TEXTHEIGHT;
 
-                for (int i = 0; i < firstFreeBox; i++) {
-                    if (boxes[i].x == boxX && boxes[i].y == boxY) {
-                        firstFreeBox -= 1;
-                        boxes[i] = boxes[firstFreeBox];
+                for (int i = 0; i < firstFreeBox[part]; i++) {
+                    if (boxes[part][i].x == boxX && boxes[part][i].y == boxY) {
+                        firstFreeBox[part] -= 1;
+                        boxes[part][i] = boxes[part][firstFreeBox[part]];
                         break;
                     }
                 }
@@ -355,15 +356,15 @@ int editorLoop() {
                 boxX = ((e.xbutton.x - 2) / TEXTWIDTH) * TEXTWIDTH;
                 boxY = ((e.xbutton.y + 5) / TEXTHEIGHT) * TEXTHEIGHT;
 
-                for (int i = 0; i <= firstFreeBox; i++) {
-                    if (boxes[i].x == boxX && boxes[i].y == boxY) {
+                for (int i = 0; i <= firstFreeBox[part]; i++) {
+                    if (boxes[part][i].x == boxX && boxes[part][i].y == boxY) {
                         break;
-                    } else if (i == firstFreeBox) {
-                        boxes[firstFreeBox].x = boxX;
-                        boxes[firstFreeBox].y = boxY;
-                        boxes[firstFreeBox].character = key;
-                        boxes[firstFreeBox].gc = colour;
-                        firstFreeBox += 1;
+                    } else if (i == firstFreeBox[part]) {
+                        boxes[part][firstFreeBox[part]].x = boxX;
+                        boxes[part][firstFreeBox[part]].y = boxY;
+                        boxes[part][firstFreeBox[part]].character = key;
+                        boxes[part][firstFreeBox[part]].gc = colour;
+                        firstFreeBox[part] += 1;
                         break;
                     }
                 }
@@ -372,10 +373,10 @@ int editorLoop() {
                 boxX = ((e.xbutton.x - 2) / TEXTWIDTH) * TEXTWIDTH;
                 boxY = ((e.xbutton.y + 5) / TEXTHEIGHT) * TEXTHEIGHT;
 
-                for (int i = 0; i < firstFreeBox; i++) {
-                    if (boxes[i].x == boxX && boxes[i].y == boxY) {
-                        firstFreeBox -= 1;
-                        boxes[i] = boxes[firstFreeBox];
+                for (int i = 0; i < firstFreeBox[part]; i++) {
+                    if (boxes[part][i].x == boxX && boxes[part][i].y == boxY) {
+                        firstFreeBox[part] -= 1;
+                        boxes[part][i] = boxes[part][firstFreeBox[part]];
                         break;
                     }
                 }
@@ -384,10 +385,9 @@ int editorLoop() {
     }
 }
 
-
 void drawEditor(struct Box *boxes, int firstFreeBox, int drawType, int colour) {
 
-
+//  Draw/clear Button
     if (drawType == 1)
         XClearWindow(d, w);
 
@@ -400,10 +400,15 @@ void drawEditor(struct Box *boxes, int firstFreeBox, int drawType, int colour) {
     else if (drawType == 1)
         XDrawString(d, w, gc[0], 960, 30, textClear, strlen(textClear));
 
-
+    //  Colour button
     XDrawRectangle(d, w, gc[0], 900, 0, 50, 50);       //draw button
     char textColour[][20] = {"White", "grey", "red", "green"};
     XDrawString(d, w, gc[colour], 915, 30, textColour[colour], strlen(textColour[colour]));
+
+    //Map button
+    XDrawRectangle(d, w, gc[0], 850, 0, 50, 50);
+    char textType[20] = "Map";
+    XDrawString(d, w, gc[0], 868, 30, textType, strlen(textType));
 
     for (int i = 0; i < firstFreeBox; i++) {
         XDrawString(d, w, gc[boxes[i].gc], boxes[i].x, boxes[i].y, &boxes[i].character, 1);
@@ -416,18 +421,68 @@ void drawEditor(struct Box *boxes, int firstFreeBox, int drawType, int colour) {
      */
 }
 
+void showMap(int firstFreeBox[]) {
+
+    //  Draw grid
+    XClearArea(d, w, 150, 150, 700, 500, False);
+    XDrawRectangle(d, w, gc[0], 150, 150, 700, 500);
+    for (int i = 1; i < 5; i++) {
+        XDrawLine(d, w, gc[0], 150, (150 + i * 100), 850, (150 + i * 100));
+    }
+    for (int i = 1; i < 7; i++) {
+        XDrawLine(d, w, gc[0], (150 + i * 100), 150, (150 + i * 100), 650);
+    }
+    
+    //  Make red box around any edited parts
+    for (int i = 0; i < 35; i++) {
+        if (firstFreeBox[i]) {
+            int x, y;
+            x = i % 7;
+            y = i / 7;
+            XDrawRectangle(d, w, gc[2], (150 + x*100), (150 + y*100), 100, 100);
+        }
+    }
+    //  Draw green box around active part
+    XDrawRectangle(d, w, gc[3], (150 + (part % 7)*100), (150 + (part / 7)*100), 100, 100);
+
+    char text[20] = "start";
+    XDrawString(d, w, gc[0], 185, 205, text, strlen(text));
+
+    for (int flag = 1; flag;) {
+
+        XEvent e;
+        XNextEvent(d, &e);
+
+        //  check which box was clicked
+        if (e.type == ButtonPress) {
+            for (int i = 0; i < 5; i++) {
+                for (int j = 0; j < 7; j++) {
+                    if (e.xbutton.x > (150 + j * 100) && e.xbutton.x < (250 + j * 100) &&
+                    e.xbutton.y > (150 + i * 100) && e.xbutton.y < (250 + i * 100)) {
+                        part = i * 7 + j;
+                        flag = !flag;
+                    }
+                }
+            }
+        }
+        else if (e.type == KeyPress) {
+            if (keyPressed(e) == 27) {
+                return;
+            }
+        }
+    }
+}
 
 int gameLoop() {
 
     XClearWindow(d, w);
     XStoreName(d, w, "Generic game?!");
 
-    struct Box boxes[5000];
-    int firstFreeBox;
+    struct Box boxes[35][5000];
+    int firstFreeBox[35] = {0};
     int playerX = 500;
     int playerY = 400;
     struct timespec start, end;
-    int keyDown = 0;
     int stopW = 0;
     int stopS = 0;
     int stopA = 0;
@@ -435,20 +490,23 @@ int gameLoop() {
 
     //Read level from file and save to boxes[]
     FILE *f = fopen("level.data", "rb");
-    fread(boxes, sizeof(struct Box), 5000, f);
+    fread(boxes, sizeof(struct Box), sizeof(boxes) / sizeof(struct Box), f);
     fclose(f);
 
     //get firstFreeBox from last element of array
-    for (int i = 5000; i >= 0; --i) {
-        if (boxes[i].x != 0) {
-            firstFreeBox = boxes[i].x;
-            break;
+    for (int i = 0; i < 35; i++) {
+        for (int j = 5000; j >= 0; --j) {
+            if (boxes[part][j].x != 0) {
+                firstFreeBox[part] = boxes[part][j].x;
+                break;
+            }
         }
     }
 
+
     while (1)       //Main loop
     {
-        drawLevel(boxes, firstFreeBox);
+        drawLevel(boxes[part], firstFreeBox[part]);
         drawPlayer(playerX, playerY);
 
         XEvent e;
@@ -457,7 +515,6 @@ int gameLoop() {
 
         if (e.type == KeyPress) {
             clock_gettime(CLOCK_REALTIME, &start);
-            keyDown = 1;
             char key = keyPressed(e);
 
             if (key == 27) {
@@ -465,10 +522,9 @@ int gameLoop() {
                 XCloseDisplay(d);
                 return 0;
             }
-            if ((key == 'w') || (key == 's') || (key == 'a') || (key == 'd')) {
+            if ((key == 'w') || (key == 'a') || (key == 's') || (key == 'd')) {
 
-                while(XCheckIfEvent(d, &e, CheckIfKeyRelease, &key) == False) {
-
+                while (XCheckIfEvent(d, &e, CheckIfKeyRelease, &key) == False) {
                     clock_gettime(CLOCK_REALTIME, &end);
                     double timeDiff = (end.tv_sec - start.tv_sec) + ((end.tv_nsec - start.tv_nsec) / BILLION);
                     printf("timediff = %f\n", timeDiff);
@@ -486,56 +542,50 @@ int gameLoop() {
 
                     if (timeDiff > 0.005) {
                         if (key == 'w') {
-                            stopW = 0;
 
-                            for (int i = 0; i < firstFreeBox; i++) {
-                                if (boxes[i].y == playerY &&
-                                    boxes[i].x < (playerX + TEXTWIDTH * 3) &&
-                                    (boxes[i].x + TEXTWIDTH) > playerX) {
-                                    stopW = 1;     // HELP
+                            stopW = 0;
+                            for (int i = 0; i < firstFreeBox[part]; i++) {
+                                if (boxes[part][i].y == playerY &&
+                                    boxes[part][i].x < (playerX + TEXTWIDTH * 3) &&
+                                    (boxes[part][i].x + TEXTWIDTH) > playerX) {
+                                    stopW = 1;
                                 }
                             }
                             if (stopW == 0)
                                 playerY -= 1;
-                        }
 
-                        else if (key == 's') {
+                        } else if (key == 's') {
+
                             stopS = 0;
-
-                            for (int i = 0; i < firstFreeBox; i++) {        //SFJK:LKJDSF:LKJSDF:LKJDSF
-                                if ((boxes[i].y - TEXTHEIGHT) == (playerY + TEXTHEIGHT * 4) &&
-                                    boxes[i].x < (playerX + TEXTWIDTH * 3) &&
-                                    (boxes[i].x + TEXTWIDTH) > playerX) {
-                                    stopS = 1;     // HELP
+                            for (int i = 0; i < firstFreeBox[part]; i++) {
+                                if ((boxes[part][i].y - TEXTHEIGHT) == (playerY + TEXTHEIGHT * 4) &&
+                                    boxes[part][i].x < (playerX + TEXTWIDTH * 3) &&
+                                    (boxes[part][i].x + TEXTWIDTH) > playerX) {
+                                    stopS = 1;
                                 }
                             }
                             if (stopS == 0)
                                 playerY += 1;
-                        }
 
-                        else if (key == 'a') {
+                        } else if (key == 'a') {
                             stopA = 0;
-
-                            for (int i = 0; i < firstFreeBox; i++) {
-                                if ((boxes[i].x + TEXTWIDTH) == playerX &&
-                                    boxes[i].y > playerY &&
-                                    (boxes[i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
-                                    stopA = 1;     // HELP
+                            for (int i = 0; i < firstFreeBox[part]; i++) {
+                                if ((boxes[part][i].x + TEXTWIDTH) == playerX &&
+                                    boxes[part][i].y > playerY &&
+                                    (boxes[part][i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
+                                    stopA = 1;
                                 }
                             }
                             if (stopA == 0)
                                 playerX -= 1;
-                        }
 
-
-                        else if (key == 'd'){
+                        } else if (key == 'd') {
                             stopD = 0;
-
-                            for (int i = 0; i < firstFreeBox; i++) {
-                                if (boxes[i].x == (playerX + TEXTWIDTH * 3) &&
-                                    boxes[i].y > playerY &&
-                                    (boxes[i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
-                                    stopD = 1;     // HELP
+                            for (int i = 0; i < firstFreeBox[part]; i++) {
+                                if (boxes[part][i].x == (playerX + TEXTWIDTH * 3) &&
+                                    boxes[part][i].y > playerY &&
+                                    (boxes[part][i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
+                                    stopD = 1;
                                 }
                             }
                             if (stopD == 0)
@@ -591,15 +641,19 @@ void drawPlayer(int x, int y) {
  *
  * DONE - Change other button to colour switch
  *
- * Functions need GC pointer to list, not single gc?
+ * CHANGED - Functions need GC pointer to list, not single gc?
  *
  * DONE - Add drawing of correct colours
  *
  * DONE - add player sprite
  *
- * DONE - add movement - biggie - xcleararea can create event?
+ * DONE - add movement - xcleararea can create event?
  *
  * DONE  - collision detection
+ *
+ * Add multiple levels to the editor
+ *
+ * Add type button in editor, add exit type
  *
  * detect type on collision, teleport
  *
