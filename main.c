@@ -86,6 +86,7 @@ Colormap c;
 int oldPlayerX = 0;
 int oldPlayerY = 0;
 int part = 0;        // The part of the level being edited
+int keyCount = 0;
 
 char keyPressed(XEvent e);
 void drawMenu();
@@ -96,7 +97,8 @@ void drawPlayer(int x, int y);
 int menuLoop();
 int gameLoop();
 int editorLoop();
-Bool CheckIfKeyRelease(Display *d, XEvent *e, XPointer arg);
+Bool CheckIfKeysReleased(Display *display, XEvent *e, char *arg);
+Bool CheckIfKeyPress(Display *display, XEvent *e, XPointer keys);
 
 
 int main(void) {
@@ -172,7 +174,7 @@ char keyPressed(XEvent e) {      //Returns key pressed
     char letter[1];
     KeySym key = 0;
     XLookupString(&e.xkey, letter, sizeof(char), &key, 0);
-    printf("key = %d\n", *letter);
+//    printf("key = %d\n", *letter);
     return letter[0];
 }
 
@@ -266,7 +268,7 @@ int editorLoop() {
         for (int i = 0; i < 35; i++) {
             for (int j = 5000; j >= 0; --j) {
                 if (boxes[i][j].x != 0) {
-                    firstFreeBox[i] = boxes[i][j].x;
+                    firstFreeBox[i] = j+1;
                     break;
                 }
             }
@@ -281,11 +283,7 @@ int editorLoop() {
         }
     }
 
-
-
-
-
-
+    
     while (1) {      //Main loop
         drawEditor(boxes[part], firstFreeBox[part], drawType, colour);
         XEvent e;
@@ -297,9 +295,9 @@ int editorLoop() {
 
             if (key == 27) {
 
-                for (int i = 0; i < 35; i++) {
-                    boxes[i][firstFreeBox[i]].x = firstFreeBox[i];  //Append firstFreeBox to list, so it can be read later
-                }
+//                for (int i = 0; i < 35; i++) {
+//                    boxes[i][firstFreeBox[i]].x = firstFreeBox[i];  //Append firstFreeBox to list, so it can be read later
+//                }
                 FILE *f = fopen("level.data", "wb");
                 fwrite(boxes, sizeof(struct Box), sizeof(boxes) / sizeof(struct Box), f);
                 fclose(f);
@@ -509,150 +507,174 @@ int gameLoop() {
     for (int i = 0; i < 35; i++) {
         for (int j = 5000; j >= 0; --j) {
             if (boxes[i][j].x != 0) {
-                firstFreeBox[i] = boxes[i][j].x;
+                firstFreeBox[i] = j+1;
                 break;
             }
         }
     }
 
-
+    drawLevel(boxes[part], firstFreeBox[part]);
+    
     while (1)       //Main loop
     {
-        drawLevel(boxes[part], firstFreeBox[part]);
         drawPlayer(playerX, playerY);
-
         XEvent e;
         XNextEvent(d, &e);
         printf("got event: %s\n", event_names[e.type]);     //Debug tool
 
         if (e.type == KeyPress) {
             clock_gettime(CLOCK_REALTIME, &start);
+            char keys[2] = {'\0', '\0'};
             char key = keyPressed(e);
+
+            if ((key == 'w') || (key == 'a') || (key == 's') || (key == 'd')) {
+                keys[keyCount] = key;
+                keyCount = !keyCount;
+            }
 
             if (key == 27) {
                 system("xset r on");
                 XCloseDisplay(d);
                 return 0;
             }
-            if ((key == 'w') || (key == 'a') || (key == 's') || (key == 'd')) {
 
-                //Loop until keyRelease event of that key
-                while (XCheckIfEvent(d, &e, CheckIfKeyRelease, &key) == False) {
+            //Loop until all keys are released
+            while (keys[0] != '\0' || keys[1] != '\0') {
 
-                    //  Only want player to move every 0.005s, so calculate time from last move, and sleep if less
-                    //  than 0.005s
-                    clock_gettime(CLOCK_REALTIME, &end);
-                    double timeDiff = (end.tv_sec - start.tv_sec) + ((end.tv_nsec - start.tv_nsec) / BILLION);
-                    diff.tv_nsec = 0.005*BILLION - (end.tv_nsec - start.tv_nsec);
+                //  Messy way of doing things, but keys are updated in the following functions.
+                XCheckIfEvent(d, &e, CheckIfKeysReleased, keys);
+                XCheckIfEvent(d, &e, CheckIfKeyPress, keys);
 
-                    /*
-                                * Bottom edge of box
-                                *
-                                *(box.x, box.y) to (box.x + WIDTH, box.y)
-                                *{
-                                * playerX and PlayerY are from top left of player
-                                * Box.x and box.y are from bottom left of box
-                                *
-                                * playerX, PlayerY
-                                */
+                //  Only want player to move every 0.005s, so calculate time from last move, and sleep if less
+                //  than 0.005s
+                clock_gettime(CLOCK_REALTIME, &end);
+                double timeDiff = (end.tv_sec - start.tv_sec) + ((end.tv_nsec - start.tv_nsec) / BILLION);
+                diff.tv_nsec = 0.005 * BILLION - (end.tv_nsec - start.tv_nsec);
 
-                    if (timeDiff < 0.005)
-                        nanosleep(&diff, &diff);
+                if (timeDiff < 0.005)
+                    nanosleep(&diff, &diff);
 
-                    //Check if player is at borders, and switch scene
-                    if (playerX == 1000) {
-                        part += 1;
-                        playerX = 10;
-                        playerY = 400;
-                        drawLevel(boxes[part], firstFreeBox[part]);
-                        drawPlayer(playerX, playerY);
+                //Check if player is at borders, and switch scene
+                if (playerX == 1000) {
+                    part += 1;
+                    playerX = 10;
+                    playerY = 400;
+                    drawLevel(boxes[part], firstFreeBox[part]);
+                    drawPlayer(playerX, playerY);
 
-                    } else if (playerX == 0) {
-                        part -= 1;
-                        playerX = 990;
-                        playerY = 400;
-                        drawLevel(boxes[part], firstFreeBox[part]);
-                        drawPlayer(playerX, playerY);
+                } else if (playerX == 0) {
+                    part -= 1;
+                    playerX = 990;
+                    playerY = 400;
+                    drawLevel(boxes[part], firstFreeBox[part]);
+                    drawPlayer(playerX, playerY);
 
-                    } else if (playerY == 800) {
-                        part += 7;
-                        playerY = 10;
-                        playerX = 500;
-                        drawLevel(boxes[part], firstFreeBox[part]);
-                        drawPlayer(playerX, playerY);
+                } else if (playerY == 800) {
+                    part += 7;
+                    playerY = 10;
+                    playerX = 500;
+                    drawLevel(boxes[part], firstFreeBox[part]);
+                    drawPlayer(playerX, playerY);
 
-                    } else if (playerY == 0) {
-                        part -= 7;
-                        playerY = 770;
-                        playerX = 500;
-                        drawLevel(boxes[part], firstFreeBox[part]);
-                        drawPlayer(playerX, playerY);
-                    }
-
-                    if (key == 'w') {
-
-                        stopW = 0;
-                        for (int i = 0; i < firstFreeBox[part]; i++) {
-                            if (boxes[part][i].y == playerY &&
-                                boxes[part][i].x < (playerX + TEXTWIDTH * 3) &&
-                                (boxes[part][i].x + TEXTWIDTH) > playerX) {
-                                stopW = 1;
-                            }
-                        }
-                        if (stopW == 0)
-                            playerY -= 1;
-
-                    } else if (key == 's') {
-
-                        stopS = 0;
-                        for (int i = 0; i < firstFreeBox[part]; i++) {
-                            if ((boxes[part][i].y - TEXTHEIGHT) == (playerY + TEXTHEIGHT * 4) &&
-                                boxes[part][i].x < (playerX + TEXTWIDTH * 3) &&
-                                (boxes[part][i].x + TEXTWIDTH) > playerX) {
-                                stopS = 1;
-                            }
-                        }
-                        if (stopS == 0)
-                            playerY += 1;
-
-                    } else if (key == 'a') {
-                        stopA = 0;
-                        for (int i = 0; i < firstFreeBox[part]; i++) {
-                            if ((boxes[part][i].x + TEXTWIDTH) == playerX &&
-                                boxes[part][i].y > playerY &&
-                                (boxes[part][i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
-                                stopA = 1;
-                            }
-                        }
-                        if (stopA == 0)
-                            playerX -= 1;
-
-                    } else if (key == 'd') {
-                        stopD = 0;
-                        for (int i = 0; i < firstFreeBox[part]; i++) {
-                            if (boxes[part][i].x == (playerX + TEXTWIDTH * 3) &&
-                                boxes[part][i].y > playerY &&
-                                (boxes[part][i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
-                                stopD = 1;
-                            }
-                        }
-                        if (stopD == 0)
-                            playerX += 1;
-                    }
-
-
-                    clock_gettime(CLOCK_REALTIME, &start);
+                } else if (playerY == 0) {
+                    part -= 7;
+                    playerY = 770;
+                    playerX = 500;
+                    drawLevel(boxes[part], firstFreeBox[part]);
                     drawPlayer(playerX, playerY);
                 }
+
+
+                //  Player Movement
+                if (keys[0] == 'w' || keys[1] == 'w') {
+                    stopW = 0;
+                    for (int i = 0; i < firstFreeBox[part]; i++) {
+                        if (boxes[part][i].y == playerY &&
+                            boxes[part][i].x < (playerX + TEXTWIDTH * 3) &&
+                            (boxes[part][i].x + TEXTWIDTH) > playerX) {
+                            stopW = 1;
+                        }
+                    }
+                    if (stopW == 0)
+                        playerY -= 1;
+                }
+                if (keys[0] == 's' || keys[1] == 's') {
+                    stopS = 0;
+                    for (int i = 0; i < firstFreeBox[part]; i++) {
+                        if ((boxes[part][i].y - TEXTHEIGHT) == (playerY + TEXTHEIGHT * 4) &&
+                            boxes[part][i].x < (playerX + TEXTWIDTH * 3) &&
+                            (boxes[part][i].x + TEXTWIDTH) > playerX) {
+                            stopS = 1;
+                        }
+                    }
+                    if (stopS == 0)
+                        playerY += 1;
+                }
+                if (keys[0] == 'a' || keys[1] == 'a') {
+                    stopA = 0;
+                    for (int i = 0; i < firstFreeBox[part]; i++) {
+                        if ((boxes[part][i].x + TEXTWIDTH) == playerX &&
+                            boxes[part][i].y > playerY &&
+                            (boxes[part][i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
+                            stopA = 1;
+                        }
+                    }
+                    if (stopA == 0)
+                        playerX -= 1;
+                }
+                if (keys[0] == 'd' || keys[1] == 'd') {
+                    stopD = 0;
+                    for (int i = 0; i < firstFreeBox[part]; i++) {
+                        if (boxes[part][i].x == (playerX + TEXTWIDTH * 3) &&
+                            boxes[part][i].y > playerY &&
+                            (boxes[part][i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
+                            stopD = 1;
+                        }
+                    }
+                    if (stopD == 0)
+                        playerX += 1;
+                }
+
+
+                clock_gettime(CLOCK_REALTIME, &start);
+                drawPlayer(playerX, playerY);
             }
         }
     }
 }
 
-Bool CheckIfKeyRelease(Display *display, XEvent *event, XPointer arg) {
+void gameTick() {
+    
+}
 
-    if (event->type == 3 && (keyPressed(*event) == arg[0]))
+Bool CheckIfKeysReleased(Display *display, XEvent *e, char *arg) {
+    printf("got event: %s\n", event_names[e->type]);
+
+    if (e->type == 3) {
+        char key = keyPressed(*e);
+        if (key == arg[0]) {
+            arg[0] = '\0';
+            keyCount = 0;
+        } else if (key == arg[1]) {
+            arg[1] = '\0';
+            keyCount = 1;
+        }
         return True;
+    }
+    else {
+        return False;
+    }
+}
+
+Bool CheckIfKeyPress(Display *display, XEvent *e, XPointer keys) {
+
+    if (e->type == 2) {
+        char key = keyPressed(*e);
+        if (keys[keyCount] == '\0' && (key == 'w' || key == 'a' || key == 's' || key == 'd')) {
+            keys[keyCount] = keyPressed(*e);
+        }
+        return True;
+    }
     else
         return False;
 }
