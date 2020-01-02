@@ -88,23 +88,14 @@ int oldPlayerY = 0;
 int part = 0;        // The part of the level being edited
 
 char keyPressed(XEvent e);
-
 void drawMenu();
-
 void drawLevel(struct Box *boxes, int firstFreeBox);
-
 void drawEditor(struct Box *boxes, int firstFreeBox, int drawType, int colour);
-
 void showMap(int firstFreeBox[]);
-
 void drawPlayer(int x, int y);
-
 int menuLoop();
-
 int gameLoop();
-
 int editorLoop();
-
 Bool CheckIfKeyRelease(Display *d, XEvent *e, XPointer arg);
 
 
@@ -263,18 +254,39 @@ int editorLoop() {
     int boxX, boxY;
     struct Box boxes[35][5000];
     int colour = 0;
-
     int firstFreeBox[35] = {0};
-    for (int i = 0; i < 35; i++) {
-        for (int j = 0; j < 5000; j++) {        //clear boxes array
-            boxes[i][j].x = 0;
-            boxes[i][j].y = 0;
-            boxes[i][j].character = '\0';
+
+    //Read level from file and save to boxes[], if file doesn't exist clear array
+    FILE *f = fopen("level.data", "rb");
+    if (f != NULL) {
+        fread(boxes, sizeof(struct Box), sizeof(boxes) / sizeof(struct Box), f);
+        fclose(f);
+
+        //get firstFreeBox from last element of array
+        for (int i = 0; i < 35; i++) {
+            for (int j = 5000; j >= 0; --j) {
+                if (boxes[i][j].x != 0) {
+                    firstFreeBox[i] = boxes[i][j].x;
+                    break;
+                }
+            }
+        }
+    } else {
+        for (int i = 0; i < 35; i++) {
+            for (int j = 0; j < 5000; j++) {        //clear boxes array
+                boxes[i][j].x = 0;
+                boxes[i][j].y = 0;
+                boxes[i][j].character = '\0';
+            }
         }
     }
 
-    while (1) {      //Main loop
 
+
+
+
+
+    while (1) {      //Main loop
         drawEditor(boxes[part], firstFreeBox[part], drawType, colour);
         XEvent e;
         XNextEvent(d, &e);
