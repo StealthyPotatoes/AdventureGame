@@ -65,7 +65,7 @@ struct MenuButtons {
 };
 
 struct Box {
-    int x, y, exit, gc;
+    int x, y, type, gc;
     char character;
 };
 
@@ -93,12 +93,14 @@ void drawMenu();
 void drawLevel(struct Box *boxes, int firstFreeBox);
 void drawEditor(struct Box *boxes, int firstFreeBox, int drawType, int colour);
 void showMap(int firstFreeBox[]);
+void showSpawner(struct Box *boxes);
 void drawPlayer(int x, int y);
 int menuLoop();
 int gameLoop();
 int editorLoop();
-Bool CheckIfKeysReleased(Display *display, XEvent *e, char *arg);
+Bool CheckIfKeysReleased(Display *display, XEvent *e, XPointer arg);
 Bool CheckIfKeyPress(Display *display, XEvent *e, XPointer keys);
+void explosion(int x, int y, int *counter);
 
 
 int main(void) {
@@ -295,9 +297,6 @@ int editorLoop() {
 
             if (key == 27) {
 
-//                for (int i = 0; i < 35; i++) {
-//                    boxes[i][firstFreeBox[i]].x = firstFreeBox[i];  //Append firstFreeBox to list, so it can be read later
-//                }
                 FILE *f = fopen("level.data", "wb");
                 fwrite(boxes, sizeof(struct Box), sizeof(boxes) / sizeof(struct Box), f);
                 fclose(f);
@@ -327,6 +326,11 @@ int editorLoop() {
                        0 < e.xbutton.y && e.xbutton.y < 50) {
                 showMap(firstFreeBox);
                 XClearWindow(d, w);
+
+            } else if (800 < e.xbutton.x && e.xbutton.x < 850 &&
+                        0 < e.xbutton.y && e.xbutton.y < 50) {
+                showSpawner(boxes[part]);
+                //XClearWindow(d, w);
 
             } else if (drawType == 0) {           //Try to find closest box to click ??
 
@@ -420,15 +424,14 @@ void drawEditor(struct Box *boxes, int firstFreeBox, int drawType, int colour) {
     char textType[20] = "Map";
     XDrawString(d, w, gc[0], 868, 30, textType, strlen(textType));
 
+    //spawner button
+    XDrawRectangle(d, w, gc[0], 800, 0, 50, 50);
+    char textSpawn[20] = "Items";
+    XDrawString(d, w, gc[0], 810, 30, textSpawn, strlen(textSpawn));
+
     for (int i = 0; i < firstFreeBox; i++) {
         XDrawString(d, w, gc[boxes[i].gc], boxes[i].x, boxes[i].y, &boxes[i].character, 1);
     }
-
-    /*
-    for (int i = 0; i < firstFreeBox; i++) {
-        XDrawRectangle(d, w, gc, (boxes[i].x), (boxes[i].y), 6, 12);
-    }
-     */
 }
 
 void showMap(int firstFreeBox[]) {
@@ -488,6 +491,7 @@ int gameLoop() {
     XClearWindow(d, w);
     XStoreName(d, w, "Generic game?!");
 
+    srand(time(NULL));
     struct Box boxes[35][5000];
     int firstFreeBox[35] = {0};
     int playerX = 500;
@@ -514,10 +518,11 @@ int gameLoop() {
     }
 
     drawLevel(boxes[part], firstFreeBox[part]);
+    drawPlayer(playerX, playerY);
     
     while (1)       //Main loop
     {
-        drawPlayer(playerX, playerY);
+
         XEvent e;
         XNextEvent(d, &e);
         printf("got event: %s\n", event_names[e.type]);     //Debug tool
@@ -526,6 +531,11 @@ int gameLoop() {
             clock_gettime(CLOCK_REALTIME, &start);
             char keys[2] = {'\0', '\0'};
             char key = keyPressed(e);
+
+            if (key == 32) {
+                int counter = 0;
+                explosion(580, 400, &counter);
+            }
 
             if ((key == 'w') || (key == 'a') || (key == 's') || (key == 'd')) {
                 keys[keyCount] = key;
@@ -541,9 +551,23 @@ int gameLoop() {
             //Loop until all keys are released
             while (keys[0] != '\0' || keys[1] != '\0') {
 
-                //  Messy way of doing things, but keys are updated in the following functions.
-                XCheckIfEvent(d, &e, CheckIfKeysReleased, keys);
-                XCheckIfEvent(d, &e, CheckIfKeyPress, keys);
+                if (XCheckIfEvent(d, &e, CheckIfKeysReleased, NULL) == True) {
+                    key = keyPressed(e);
+                    if (key == keys[0]) {
+                        keys[0] = '\0';
+                        keyCount = 0;
+                    } else if (key == keys[1]) {
+                        keys[1] = '\0';
+                        keyCount = 1;
+                    }
+                }
+
+                if (XCheckIfEvent(d, &e, CheckIfKeyPress, NULL) == True) {
+                    key = keyPressed(e);
+                    if (keys[keyCount] == '\0' && (key == 'w' || key == 'a' || key == 's' || key == 'd')) {
+                        keys[keyCount] = keyPressed(e);
+                    }
+                }
 
                 //  Only want player to move every 0.005s, so calculate time from last move, and sleep if less
                 //  than 0.005s
@@ -553,6 +577,8 @@ int gameLoop() {
 
                 if (timeDiff < 0.005)
                     nanosleep(&diff, &diff);
+
+                clock_gettime(CLOCK_REALTIME, &start);
 
                 //Check if player is at borders, and switch scene
                 if (playerX == 1000) {
@@ -635,46 +661,97 @@ int gameLoop() {
                         playerX += 1;
                 }
 
-
-                clock_gettime(CLOCK_REALTIME, &start);
                 drawPlayer(playerX, playerY);
             }
         }
     }
 }
 
-void gameTick() {
-    
+void explosion(int x, int y, int *counter) {
+    int particleCount = 5;
+    char letter[2] = "*";
+    double gravity = 0.2;
+    int minVel = 1;
+    int maxVel = 2;
+    double xVel[5];
+    double yVel[5];
+    int particleX[5];
+    int particleY[5];
+
+    if (*counter == 0) {
+        for (int i = 0; i < particleCount; i++) {
+            if (rand() > RAND_MAX/2)
+                xVel[i] = ((double)rand()/(double)(RAND_MAX))*3;
+            else
+                xVel[i] = -((double)rand()/(double)(RAND_MAX))*3;
+
+            yVel[i] = ((double)rand()/(double)(RAND_MAX))*6;
+        }
+    }
+
+    /*
+     * TODO - change drawgame to have drawparticle, and explosion adds to array
+     *      - Also redo game loop to remove blocking XNextEvent
+     */
+
+
+    //temp
+    struct timespec time;
+    time.tv_sec = 0;
+    time.tv_nsec = 0.04 * BILLION;
+
+    while (*counter < 50) {
+        //suvat s=vt
+        for (int i = 0; i < particleCount; i++) {
+            particleX[i] = x + xVel[i] * *counter;
+            particleY[i] = y - (yVel[i] * *counter) + (0.5 * gravity * *counter * *counter);
+            XDrawString(d, w, gc[3], particleX[i], particleY[i], letter, strlen(letter));
+        }
+        *counter += 1;
+        XFlush(d);
+        nanosleep(&time, &time);
+    }
 }
 
-Bool CheckIfKeysReleased(Display *display, XEvent *e, char *arg) {
+void showSpawner(struct Box *boxes) {
+    XClearArea(d, w, 800, 50, 50, 50, False);
+    XDrawRectangle(d, w, gc[0], 800, 50, 50, 50);
+    char tempText[] = "gun";
+    XDrawString(d, w, gc[0], 815, 80, tempText, strlen(tempText));
+
+    while(1) {
+        XEvent e;
+        XNextEvent(d, &e);
+
+        if (e.type == ButtonPress) {
+            if (800 < e.xbutton.x && e.xbutton.x < 850 &&
+                50 < e.xbutton.y && e.xbutton.y < 100) {
+                XDrawRectangle(d, w, gc[3], 800, 50, 50, 50);
+                //drawGun
+            }
+
+            //TODO - Add gun stuff
+            return;
+        } else
+            return;
+    }
+
+
+}
+
+Bool CheckIfKeysReleased(Display *display, XEvent *e, XPointer arg) {
     printf("got event: %s\n", event_names[e->type]);
 
-    if (e->type == 3) {
-        char key = keyPressed(*e);
-        if (key == arg[0]) {
-            arg[0] = '\0';
-            keyCount = 0;
-        } else if (key == arg[1]) {
-            arg[1] = '\0';
-            keyCount = 1;
-        }
+    if (e->type == 3)
         return True;
-    }
-    else {
+    else
         return False;
-    }
 }
 
 Bool CheckIfKeyPress(Display *display, XEvent *e, XPointer keys) {
 
-    if (e->type == 2) {
-        char key = keyPressed(*e);
-        if (keys[keyCount] == '\0' && (key == 'w' || key == 'a' || key == 's' || key == 'd')) {
-            keys[keyCount] = keyPressed(*e);
-        }
+    if (e->type == 2)
         return True;
-    }
     else
         return False;
 }
@@ -704,7 +781,7 @@ void drawPlayer(int x, int y) {
 
 
 
-//TODOS
+//TODO
 /*
  * DONE - flickering on drawing, don't clear all ?????
  *
@@ -720,15 +797,21 @@ void drawPlayer(int x, int y) {
  *
  * DONE  - collision detection
  *
- * Add multiple levels to the editor
+ * DONE - Add multiple levels to the editor
  *
  * Add type button in editor, add exit type
  *
- * detect type on collision, teleport
+ * CHANGED - detect type on collision, teleport
  *
- * improve editor, allow for multiple rooms....
+ * DONE - improve editor, allow for multiple rooms....
  *
  * brush size
+ *
+ * change game loop to be constantly running, possibly increase tick duration
+ *
+ * shoot?
+ *
+ * Explosion?
  *
  * etc
  */

@@ -2,6 +2,7 @@
   <dictionary name="kacper">
     <words>
       <w>reparent</w>
+      <w>spawner</w>
       <w>textheight</w>
       <w>textwidth</w>
       <w>xset</w>
