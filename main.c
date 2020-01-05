@@ -5,8 +5,8 @@
 #include <X11/Xutil.h>
 #include <time.h>
 
-#define TEXTHEIGHT 10
-#define TEXTWIDTH 6
+#define TEXTHEIGHT (int)10
+#define TEXTWIDTH (int)6
 #define BILLION 1E9
 
 
@@ -69,6 +69,12 @@ struct Box {
     char character;
 };
 
+struct Particle {
+    int x, y, startTime, ttl;
+    char direction;
+    Bool reflect;
+};
+
 const struct Box player[7] = {{6,  10, 0, 0, 79},
                              {6,  20, 0, 0, 124},
                              {6,  30, 0, 0, 124},
@@ -86,7 +92,6 @@ Colormap c;
 int oldPlayerX = 0;
 int oldPlayerY = 0;
 int part = 0;        // The part of the level being edited
-int keyCount = 0;
 
 char keyPressed(XEvent e);
 void drawMenu();
@@ -98,8 +103,9 @@ void drawPlayer(int x, int y);
 int menuLoop();
 int gameLoop();
 int editorLoop();
-Bool CheckIfKeysReleased(Display *display, XEvent *e, XPointer arg);
-Bool CheckIfKeyPress(Display *display, XEvent *e, XPointer keys);
+Bool checkIfKeysReleased(Display *display, XEvent *e, XPointer arg);
+Bool checkIfKeyPress(Display *display, XEvent *e, XPointer keys);
+Bool checkIfNotKeyEvent(Display *display, XEvent *e, XPointer arg);
 void explosion(int x, int y, int *counter);
 
 
@@ -189,7 +195,7 @@ void drawMenu() {      //Displays menu, including buttons and text
     XDrawRectangle(d, w, gc[0], menuX, menuY, 600, 500);     //Big box
 
     for (int i = 0; i < 5; i++) {
-        XDrawString(d, w, gc[0], 300, (240 + 10 * i), title[i], strlen(title[i]));
+        XDrawString(d, w, gc[0], 300, (240 + 10 * i), title[i], (int)strlen(title[i]));
     }
 
     buttons.start.x = menuX + 50;       //button 1
@@ -207,13 +213,13 @@ void drawMenu() {      //Displays menu, including buttons and text
                    buttons.editor.x, buttons.editor.y, buttons.editor.width, buttons.editor.height);
 
     char textButton1[100] = "Start Game";
-    XDrawString(d, w, gc[0], 470, 405, textButton1, strlen(textButton1));
+    XDrawString(d, w, gc[0], 470, 405, textButton1, (int)strlen(textButton1));
 
     char textButton2[100] = "Level Editor";
-    XDrawString(d, w, gc[0], 465, 555, textButton2, strlen(textButton2));
+    XDrawString(d, w, gc[0], 465, 555, textButton2, (int)strlen(textButton2));
 
     char textTest[100] = "If text looks off center, it's because it probably is.";
-    XDrawString(d, w, gc[0], 0, 12, textTest, strlen(textTest));
+    XDrawString(d, w, gc[0], 0, 12, textTest, (int)strlen(textTest));
 
     XFlush(d);
 }
@@ -410,24 +416,24 @@ void drawEditor(struct Box *boxes, int firstFreeBox, int drawType, int colour) {
     char textClear[20] = "clear";
 
     if (drawType == 0)
-        XDrawString(d, w, gc[0], 965, 30, textDraw, strlen(textDraw));
+        XDrawString(d, w, gc[0], 965, 30, textDraw, (int)strlen(textDraw));
     else if (drawType == 1)
-        XDrawString(d, w, gc[0], 960, 30, textClear, strlen(textClear));
+        XDrawString(d, w, gc[0], 960, 30, textClear, (int)strlen(textClear));
 
     //  Colour button
     XDrawRectangle(d, w, gc[0], 900, 0, 50, 50);       //draw button
     char textColour[][20] = {"White", "grey", "red", "green"};
-    XDrawString(d, w, gc[colour], 915, 30, textColour[colour], strlen(textColour[colour]));
+    XDrawString(d, w, gc[colour], 915, 30, textColour[colour], (int)strlen(textColour[colour]));
 
     //Map button
     XDrawRectangle(d, w, gc[0], 850, 0, 50, 50);
     char textType[20] = "Map";
-    XDrawString(d, w, gc[0], 868, 30, textType, strlen(textType));
+    XDrawString(d, w, gc[0], 868, 30, textType, (int)strlen(textType));
 
     //spawner button
     XDrawRectangle(d, w, gc[0], 800, 0, 50, 50);
     char textSpawn[20] = "Items";
-    XDrawString(d, w, gc[0], 810, 30, textSpawn, strlen(textSpawn));
+    XDrawString(d, w, gc[0], 810, 30, textSpawn, (int)strlen(textSpawn));
 
     for (int i = 0; i < firstFreeBox; i++) {
         XDrawString(d, w, gc[boxes[i].gc], boxes[i].x, boxes[i].y, &boxes[i].character, 1);
@@ -459,7 +465,7 @@ void showMap(int firstFreeBox[]) {
     XDrawRectangle(d, w, gc[3], (150 + (part % 7)*100), (150 + (part / 7)*100), 100, 100);
 
     char text[20] = "start";
-    XDrawString(d, w, gc[0], 185, 205, text, strlen(text));
+    XDrawString(d, w, gc[0], 185, 205, text, (int)strlen(text));
 
     for (int flag = 1; flag;) {
 
@@ -519,101 +525,102 @@ int gameLoop() {
 
     drawLevel(boxes[part], firstFreeBox[part]);
     drawPlayer(playerX, playerY);
-    
+
+    clock_gettime(CLOCK_REALTIME, &start);
+    char keys[2] = {'\0', '\0'};
+    char key;
+    XEvent e;
+    XEvent eTrash;
+    struct Particle particles[256];
+    int firstFreeParticle;
+    char lastDirection;
+
     while (1)       //Main loop
     {
+        //  Only want player to move every 0.005s, so calculate time from last move, and sleep if less
+        //  than 0.01s
+        clock_gettime(CLOCK_REALTIME, &end);
+        double timeDiff = (double) (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / BILLION;
+        diff.tv_nsec = 0.01 * BILLION - (double) (end.tv_nsec - start.tv_nsec);
 
-        XEvent e;
-        XNextEvent(d, &e);
-        printf("got event: %s\n", event_names[e.type]);     //Debug tool
+        if (timeDiff < 0.01)
+            nanosleep(&diff, &diff);
 
-        if (e.type == KeyPress) {
-            clock_gettime(CLOCK_REALTIME, &start);
-            char keys[2] = {'\0', '\0'};
-            char key = keyPressed(e);
+        clock_gettime(CLOCK_REALTIME, &start);
 
+        while (XCheckIfEvent(d, &eTrash, checkIfNotKeyEvent, NULL) == True);
+
+        //  KeyReleaseEvent
+        if (XCheckIfEvent(d, &e, checkIfKeysReleased, NULL) == True) {
+            key = keyPressed(e);
+            if (key == keys[0]) {
+                keys[0] = '\0';
+            } else if (key == keys[1]) {
+                keys[1] = '\0';
+            }
+        }
+
+        //  KeyPressEvent
+        if (XCheckIfEvent(d, &e, checkIfKeyPress, NULL) == True) {
+            key = keyPressed(e);
+
+            //  Space key
             if (key == 32) {
                 int counter = 0;
                 explosion(580, 400, &counter);
             }
 
-            if ((key == 'w') || (key == 'a') || (key == 's') || (key == 'd')) {
-                keys[keyCount] = key;
-                keyCount = !keyCount;
-            }
-
+            //  Escape key
             if (key == 27) {
                 system("xset r on");
                 XCloseDisplay(d);
                 return 0;
             }
 
-            //Loop until all keys are released
-            while (keys[0] != '\0' || keys[1] != '\0') {
+            if (key == 'w' || key == 'a' || key == 's' || key == 'd') {
+                if (keys[0] == '\0') {
+                    keys[0] = key;
+                } else if (keys[1] == '\0')
+                    keys[1] = key;
+            }
+        }
 
-                if (XCheckIfEvent(d, &e, CheckIfKeysReleased, NULL) == True) {
-                    key = keyPressed(e);
-                    if (key == keys[0]) {
-                        keys[0] = '\0';
-                        keyCount = 0;
-                    } else if (key == keys[1]) {
-                        keys[1] = '\0';
-                        keyCount = 1;
-                    }
-                }
+        if (keys[0] != '\0' || keys[1] != '\0') {
 
-                if (XCheckIfEvent(d, &e, CheckIfKeyPress, NULL) == True) {
-                    key = keyPressed(e);
-                    if (keys[keyCount] == '\0' && (key == 'w' || key == 'a' || key == 's' || key == 'd')) {
-                        keys[keyCount] = keyPressed(e);
-                    }
-                }
+            //Check if player is at borders, and switch scene
+            if (playerX == 1000) {
+                part += 1;
+                playerX = 10;
+                playerY = 400;
+                drawLevel(boxes[part], firstFreeBox[part]);
+                drawPlayer(playerX, playerY);
 
-                //  Only want player to move every 0.005s, so calculate time from last move, and sleep if less
-                //  than 0.005s
-                clock_gettime(CLOCK_REALTIME, &end);
-                double timeDiff = (end.tv_sec - start.tv_sec) + ((end.tv_nsec - start.tv_nsec) / BILLION);
-                diff.tv_nsec = 0.005 * BILLION - (end.tv_nsec - start.tv_nsec);
+            } else if (playerX == 0) {
+                part -= 1;
+                playerX = 990;
+                playerY = 400;
+                drawLevel(boxes[part], firstFreeBox[part]);
+                drawPlayer(playerX, playerY);
 
-                if (timeDiff < 0.005)
-                    nanosleep(&diff, &diff);
+            } else if (playerY == 800) {
+                part += 7;
+                playerY = 10;
+                playerX = 500;
+                drawLevel(boxes[part], firstFreeBox[part]);
+                drawPlayer(playerX, playerY);
 
-                clock_gettime(CLOCK_REALTIME, &start);
+            } else if (playerY == 0) {
+                part -= 7;
+                playerY = 770;
+                playerX = 500;
+                drawLevel(boxes[part], firstFreeBox[part]);
+                drawPlayer(playerX, playerY);
+            }
 
-                //Check if player is at borders, and switch scene
-                if (playerX == 1000) {
-                    part += 1;
-                    playerX = 10;
-                    playerY = 400;
-                    drawLevel(boxes[part], firstFreeBox[part]);
-                    drawPlayer(playerX, playerY);
-
-                } else if (playerX == 0) {
-                    part -= 1;
-                    playerX = 990;
-                    playerY = 400;
-                    drawLevel(boxes[part], firstFreeBox[part]);
-                    drawPlayer(playerX, playerY);
-
-                } else if (playerY == 800) {
-                    part += 7;
-                    playerY = 10;
-                    playerX = 500;
-                    drawLevel(boxes[part], firstFreeBox[part]);
-                    drawPlayer(playerX, playerY);
-
-                } else if (playerY == 0) {
-                    part -= 7;
-                    playerY = 770;
-                    playerX = 500;
-                    drawLevel(boxes[part], firstFreeBox[part]);
-                    drawPlayer(playerX, playerY);
-                }
-
-
-                //  Player Movement
-                if (keys[0] == 'w' || keys[1] == 'w') {
-                    stopW = 0;
+            //  Player Movement
+            if (keys[0] == 'w' || keys[1] == 'w') {
+                stopW = 0;
+                if (playerY % TEXTHEIGHT == 0) {
                     for (int i = 0; i < firstFreeBox[part]; i++) {
                         if (boxes[part][i].y == playerY &&
                             boxes[part][i].x < (playerX + TEXTWIDTH * 3) &&
@@ -621,11 +628,15 @@ int gameLoop() {
                             stopW = 1;
                         }
                     }
-                    if (stopW == 0)
-                        playerY -= 1;
                 }
-                if (keys[0] == 's' || keys[1] == 's') {
-                    stopS = 0;
+                if (stopW == 0) {
+                    playerY -= 2;
+                    lastDirection = 'w';
+                }
+            }
+            if (keys[0] == 's' || keys[1] == 's') {
+                stopS = 0;
+                if (playerY % TEXTHEIGHT == 0) {
                     for (int i = 0; i < firstFreeBox[part]; i++) {
                         if ((boxes[part][i].y - TEXTHEIGHT) == (playerY + TEXTHEIGHT * 4) &&
                             boxes[part][i].x < (playerX + TEXTWIDTH * 3) &&
@@ -633,11 +644,15 @@ int gameLoop() {
                             stopS = 1;
                         }
                     }
-                    if (stopS == 0)
-                        playerY += 1;
                 }
-                if (keys[0] == 'a' || keys[1] == 'a') {
-                    stopA = 0;
+                if (stopS == 0) {
+                    playerY += 2;
+                    lastDirection = 's';
+                }
+            }
+            if (keys[0] == 'a' || keys[1] == 'a') {
+                stopA = 0;
+                if (playerX % TEXTWIDTH == 0) {
                     for (int i = 0; i < firstFreeBox[part]; i++) {
                         if ((boxes[part][i].x + TEXTWIDTH) == playerX &&
                             boxes[part][i].y > playerY &&
@@ -645,11 +660,15 @@ int gameLoop() {
                             stopA = 1;
                         }
                     }
-                    if (stopA == 0)
-                        playerX -= 1;
                 }
-                if (keys[0] == 'd' || keys[1] == 'd') {
-                    stopD = 0;
+                if (stopA == 0) {
+                    playerX -= 2;
+                    lastDirection = 'a';
+                }
+            }
+            if (keys[0] == 'd' || keys[1] == 'd') {
+                stopD = 0;
+                if (playerX % TEXTWIDTH == 0) {
                     for (int i = 0; i < firstFreeBox[part]; i++) {
                         if (boxes[part][i].x == (playerX + TEXTWIDTH * 3) &&
                             boxes[part][i].y > playerY &&
@@ -657,11 +676,41 @@ int gameLoop() {
                             stopD = 1;
                         }
                     }
-                    if (stopD == 0)
-                        playerX += 1;
                 }
+                if (stopD == 0) {
+                    playerX += 2;
+                    lastDirection = 'w';
+                }
+            }
+        }
+        drawPlayer(playerX, playerY);
+        XFlush(d);
+    }
+}
 
-                drawPlayer(playerX, playerY);
+void shoot(int playerX, int playerY, int *firstFreeParticle, char lastDirection, struct Particle *bullets[50]) {
+    bullets[*firstFreeParticle]->x = playerX + TEXTWIDTH * 2;
+    bullets[*firstFreeParticle]->y = playerY + TEXTHEIGHT * 2;
+    bullets[*firstFreeParticle]->direction = lastDirection;
+    bullets[*firstFreeParticle]->startTime = 0;
+    *firstFreeParticle += 1;
+}
+
+void updateBullets(int *firstFreeParticle, struct Particle *bullets[50], struct Box boxes[5000], int firstFreeBox) {
+    for (int i = 0; i < *firstFreeParticle; i++) {
+            if (bullets[*firstFreeParticle]->direction == 'w') {
+                for (int k = 0; k < 6; k += 2) {    //check for k 0, 2, 4, to make sure no collisions further on in path
+                    if (bullets[*firstFreeParticle]->y % TEXTHEIGHT == 0) {
+                        for (int j = 0; j < firstFreeBox; j++) {
+                            if (boxes[j].y == bullets[*firstFreeParticle]->y - k &&
+                                boxes[j].x < (bullets[*firstFreeParticle]->x + TEXTWIDTH) &&
+                                (boxes[j].x + TEXTWIDTH) > bullets[*firstFreeParticle]->y) {
+                                return;
+                            }
+                        }
+                    }
+                }
+                bullets[*firstFreeParticle]->y -= 5;
             }
         }
     }
@@ -671,13 +720,15 @@ void explosion(int x, int y, int *counter) {
     int particleCount = 5;
     char letter[2] = "*";
     double gravity = 0.2;
-    int minVel = 1;
-    int maxVel = 2;
+//    int minVel = 1;
+//    int maxVel = 2;
     double xVel[5];
     double yVel[5];
     int particleX[5];
     int particleY[5];
 
+
+    //  Give random initial velocity
     if (*counter == 0) {
         for (int i = 0; i < particleCount; i++) {
             if (rand() > RAND_MAX/2)
@@ -698,14 +749,14 @@ void explosion(int x, int y, int *counter) {
     //temp
     struct timespec time;
     time.tv_sec = 0;
-    time.tv_nsec = 0.04 * BILLION;
+    time.tv_nsec = 0.005 * BILLION;
 
     while (*counter < 50) {
         //suvat s=vt
         for (int i = 0; i < particleCount; i++) {
             particleX[i] = x + xVel[i] * *counter;
             particleY[i] = y - (yVel[i] * *counter) + (0.5 * gravity * *counter * *counter);
-            XDrawString(d, w, gc[3], particleX[i], particleY[i], letter, strlen(letter));
+            XDrawString(d, w, gc[3], particleX[i], particleY[i], letter, (int)strlen(letter));
         }
         *counter += 1;
         XFlush(d);
@@ -717,7 +768,7 @@ void showSpawner(struct Box *boxes) {
     XClearArea(d, w, 800, 50, 50, 50, False);
     XDrawRectangle(d, w, gc[0], 800, 50, 50, 50);
     char tempText[] = "gun";
-    XDrawString(d, w, gc[0], 815, 80, tempText, strlen(tempText));
+    XDrawString(d, w, gc[0], 815, 80, tempText, (int)strlen(tempText));
 
     while(1) {
         XEvent e;
@@ -739,7 +790,7 @@ void showSpawner(struct Box *boxes) {
 
 }
 
-Bool CheckIfKeysReleased(Display *display, XEvent *e, XPointer arg) {
+Bool checkIfKeysReleased(Display *display, XEvent *e, XPointer arg) {
     printf("got event: %s\n", event_names[e->type]);
 
     if (e->type == 3)
@@ -748,9 +799,16 @@ Bool CheckIfKeysReleased(Display *display, XEvent *e, XPointer arg) {
         return False;
 }
 
-Bool CheckIfKeyPress(Display *display, XEvent *e, XPointer keys) {
+Bool checkIfKeyPress(Display *display, XEvent *e, XPointer keys) {
 
     if (e->type == 2)
+        return True;
+    else
+        return False;
+}
+
+Bool checkIfNotKeyEvent(Display *display, XEvent *e, XPointer arg) {
+    if (e->type != 2 && e->type != 3)
         return True;
     else
         return False;
@@ -812,6 +870,8 @@ void drawPlayer(int x, int y) {
  * shoot?
  *
  * Explosion?
+ *
+ * Redo boxes array to include entire screen, so collisions check only check the single box infront of them...
  *
  * etc
  */
