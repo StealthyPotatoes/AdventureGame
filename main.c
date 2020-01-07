@@ -8,6 +8,8 @@
 #define TEXTHEIGHT (int)10
 #define TEXTWIDTH (int)6
 #define BILLION 1E9
+#define SCREENWIDTH 1000
+#define SCREENHEIGHT 800
 
 
 static const char *event_names[] = {        //List copied from some site, lost link :/
@@ -69,6 +71,12 @@ struct Box {
     char character;
 };
 
+struct Level {
+    int gc, type;
+    char character;
+    Bool draw;
+};
+
 struct Particle {
     int x, y, startTime, ttl;
     char direction;
@@ -95,10 +103,10 @@ int part = 0;        // The part of the level being edited
 
 char keyPressed(XEvent e);
 void drawMenu();
-void drawLevel(struct Box *boxes, int firstFreeBox);
-void drawEditor(struct Box *boxes, int firstFreeBox, int drawType, int colour);
-void showMap(int firstFreeBox[]);
-void showSpawner(struct Box *boxes);
+void drawLevel(struct Level level[167][80]);
+void drawEditor(struct Level level[167][80], int drawType, int colour);
+void showMap(struct Level level[35][167][80]);
+void showSpawner(struct Level level[167][80]);
 void drawPlayer(int x, int y);
 int menuLoop();
 int gameLoop();
@@ -120,7 +128,7 @@ int main(void) {
     int white = WhitePixel(d, screen);
 
     w = XCreateSimpleWindow(d, RootWindow(d, screen),
-                            10, 10, 1000, 800, 0, white, black);
+                            10, 10, SCREENWIDTH, SCREENHEIGHT, 0, white, black);
 
     XSelectInput(d, w,
                  StructureNotifyMask | KeyPressMask | ExposureMask | KeyReleaseMask | ButtonPressMask |
@@ -262,16 +270,17 @@ int editorLoop() {
     char key = 0;
     int drawType = 0;       //  0 = draw, 1 = clear
     int boxX, boxY;
-    struct Box boxes[35][5000];
+    struct Level level[35][167][80];
     int colour = 0;
     int firstFreeBox[35] = {0};
 
     //Read level from file and save to boxes[], if file doesn't exist clear array
     FILE *f = fopen("level.data", "rb");
     if (f != NULL) {
-        fread(boxes, sizeof(struct Box), sizeof(boxes) / sizeof(struct Box), f);
+        fread(level, sizeof(struct Level), sizeof(level) / sizeof(struct Level), f);
         fclose(f);
 
+        /*
         //get firstFreeBox from last element of array
         for (int i = 0; i < 35; i++) {
             for (int j = 5000; j >= 0; --j) {
@@ -281,19 +290,20 @@ int editorLoop() {
                 }
             }
         }
-    } else {
+         */
+    } else {    //clear boxes array
         for (int i = 0; i < 35; i++) {
-            for (int j = 0; j < 5000; j++) {        //clear boxes array
-                boxes[i][j].x = 0;
-                boxes[i][j].y = 0;
-                boxes[i][j].character = '\0';
+            for (int j = 0; j < 167; j++) {
+                for (int k = 0; k < 80; k++) {
+                    level[i][j][k].character = '\0';
+                }
             }
         }
     }
 
     
     while (1) {      //Main loop
-        drawEditor(boxes[part], firstFreeBox[part], drawType, colour);
+        drawEditor(level[part], drawType, colour);
         XEvent e;
         XNextEvent(d, &e);
         printf("got event: %s\n", event_names[e.type]);     //Debug tool
@@ -304,7 +314,7 @@ int editorLoop() {
             if (key == 27) {
 
                 FILE *f = fopen("level.data", "wb");
-                fwrite(boxes, sizeof(struct Box), sizeof(boxes) / sizeof(struct Box), f);
+                fwrite(level, sizeof(struct Level), sizeof(level) / sizeof(struct Level), f);
                 fclose(f);
 
                 system("xset r on");
@@ -323,51 +333,37 @@ int editorLoop() {
 
                 XClearWindow(d, w);
 
-            } else if (950 < e.xbutton.x && e.xbutton.x < 1000 &&  //Switch between clear and draw
+            }
+            else if (950 < e.xbutton.x && e.xbutton.x < 1000 &&  //Switch between clear and draw
                        0 < e.xbutton.y && e.xbutton.y < 50) {
                 drawType = !drawType;
                 XClearWindow(d, w);
 
-            } else if (850 < e.xbutton.x && e.xbutton.x < 900 &&
+            }
+            else if (850 < e.xbutton.x && e.xbutton.x < 900 &&
                        0 < e.xbutton.y && e.xbutton.y < 50) {
-                showMap(firstFreeBox);
+                showMap(level);
                 XClearWindow(d, w);
 
-            } else if (800 < e.xbutton.x && e.xbutton.x < 850 &&
+            }
+            else if (800 < e.xbutton.x && e.xbutton.x < 850 &&
                         0 < e.xbutton.y && e.xbutton.y < 50) {
-                showSpawner(boxes[part]);
-                //XClearWindow(d, w);
+                showSpawner(level[part]);
 
-            } else if (drawType == 0) {           //Try to find closest box to click ??
+            }
+            else if (drawType == 0) {           //Try to find closest box to click ??
 
-                boxX = ((e.xbutton.x - 2) / TEXTWIDTH) * TEXTWIDTH;
+                boxX = ((e.xbutton.x - 2) / TEXTWIDTH) * TEXTWIDTH;     //TODO clean up
                 boxY = ((e.xbutton.y + 5) / TEXTHEIGHT) * TEXTHEIGHT;
+                level[part][boxX / TEXTWIDTH][boxY / TEXTHEIGHT].draw = True;
+                level[part][boxX / TEXTWIDTH][boxY / TEXTHEIGHT].character = key;
+                level[part][boxX / TEXTWIDTH][boxY / TEXTHEIGHT].gc = colour;
 
-                for (int i = 0; i <= firstFreeBox[part]; i++) {
-                    if (boxes[part][i].x == boxX && boxes[part][i].y == boxY) {
-                        break;
-
-                    } else if (i == firstFreeBox[part]) {
-                        boxes[part][firstFreeBox[part]].x = boxX;
-                        boxes[part][firstFreeBox[part]].y = boxY;
-                        boxes[part][firstFreeBox[part]].character = key;
-                        boxes[part][firstFreeBox[part]].gc = colour;
-                        firstFreeBox[part] += 1;
-                        break;
-                    }
-                }
             } else if (drawType == 1) {
 
                 boxX = ((e.xbutton.x - 2) / TEXTWIDTH) * TEXTWIDTH;
                 boxY = ((e.xbutton.y + 5) / TEXTHEIGHT) * TEXTHEIGHT;
-
-                for (int i = 0; i < firstFreeBox[part]; i++) {
-                    if (boxes[part][i].x == boxX && boxes[part][i].y == boxY) {
-                        firstFreeBox[part] -= 1;
-                        boxes[part][i] = boxes[part][firstFreeBox[part]];
-                        break;
-                    }
-                }
+                level[part][boxX / TEXTWIDTH][boxY / TEXTHEIGHT].draw = False;
             }
         }
         if (e.type == MotionNotify) {
@@ -375,37 +371,21 @@ int editorLoop() {
 
                 boxX = ((e.xbutton.x - 2) / TEXTWIDTH) * TEXTWIDTH;
                 boxY = ((e.xbutton.y + 5) / TEXTHEIGHT) * TEXTHEIGHT;
+                level[part][boxX / TEXTWIDTH][boxY / TEXTHEIGHT].draw = True;
+                level[part][boxX / TEXTWIDTH][boxY / TEXTHEIGHT].character = key;
+                level[part][boxX / TEXTWIDTH][boxY / TEXTHEIGHT].gc = colour;
 
-                for (int i = 0; i <= firstFreeBox[part]; i++) {
-                    if (boxes[part][i].x == boxX && boxes[part][i].y == boxY) {
-                        break;
-                    } else if (i == firstFreeBox[part]) {
-                        boxes[part][firstFreeBox[part]].x = boxX;
-                        boxes[part][firstFreeBox[part]].y = boxY;
-                        boxes[part][firstFreeBox[part]].character = key;
-                        boxes[part][firstFreeBox[part]].gc = colour;
-                        firstFreeBox[part] += 1;
-                        break;
-                    }
-                }
             } else if (drawType == 1) {
 
                 boxX = ((e.xbutton.x - 2) / TEXTWIDTH) * TEXTWIDTH;
                 boxY = ((e.xbutton.y + 5) / TEXTHEIGHT) * TEXTHEIGHT;
-
-                for (int i = 0; i < firstFreeBox[part]; i++) {
-                    if (boxes[part][i].x == boxX && boxes[part][i].y == boxY) {
-                        firstFreeBox[part] -= 1;
-                        boxes[part][i] = boxes[part][firstFreeBox[part]];
-                        break;
-                    }
-                }
+                level[part][boxX / TEXTWIDTH][boxY / TEXTHEIGHT].draw = False;
             }
         }
     }
 }
 
-void drawEditor(struct Box *boxes, int firstFreeBox, int drawType, int colour) {
+void drawEditor(struct Level level[167][80], int drawType, int colour) {
 
 //  Draw/clear Button
     if (drawType == 1)
@@ -435,12 +415,16 @@ void drawEditor(struct Box *boxes, int firstFreeBox, int drawType, int colour) {
     char textSpawn[20] = "Items";
     XDrawString(d, w, gc[0], 810, 30, textSpawn, (int)strlen(textSpawn));
 
-    for (int i = 0; i < firstFreeBox; i++) {
-        XDrawString(d, w, gc[boxes[i].gc], boxes[i].x, boxes[i].y, &boxes[i].character, 1);
+    for (int i = 0; i < 167; i++) {
+        for (int j = 0; j < 80; j++) {
+            if (level[i][j].draw == True) {
+                XDrawString(d, w, gc[level[i][j].gc], i * TEXTWIDTH, j * TEXTHEIGHT, &level[i][j].character, 1);
+            }
+        }
     }
 }
 
-void showMap(int firstFreeBox[]) {
+void showMap(struct Level level[35][167][80]) {
 
     //  Draw grid
     XClearArea(d, w, 150, 150, 700, 500, False);
@@ -454,11 +438,15 @@ void showMap(int firstFreeBox[]) {
     
     //  Make red box around any edited parts
     for (int i = 0; i < 35; i++) {
-        if (firstFreeBox[i]) {
-            int x, y;
-            x = i % 7;
-            y = i / 7;
-            XDrawRectangle(d, w, gc[2], (150 + x*100), (150 + y*100), 100, 100);
+        for (int j = 0; j < 167; j++) {
+            for (int k = 0; k < 80; k++) {
+                if (level[i][j][k].draw == True) {
+                    int x, y;
+                    x = i % 7;
+                    y = i / 7;
+                    XDrawRectangle(d, w, gc[2], (150 + x*100), (150 + y*100), 100, 100);
+                }
+            }
         }
     }
     //  Draw green box around active part
@@ -498,8 +486,8 @@ int gameLoop() {
     XStoreName(d, w, "Generic game?!");
 
     srand(time(NULL));
-    struct Box boxes[35][5000];
-    int firstFreeBox[35] = {0};
+    struct Level level[35][167][80];
+    //int firstFreeBox[35] = {0};
     int playerX = 500;
     int playerY = 400;
     struct timespec start, end, diff;
@@ -508,11 +496,12 @@ int gameLoop() {
     int stopA = 0;
     int stopD = 0;
 
-    //Read level from file and save to boxes[]
+    //Read level from file and save to level[]
     FILE *f = fopen("level.data", "rb");
-    fread(boxes, sizeof(struct Box), sizeof(boxes) / sizeof(struct Box), f);
+    fread(level, sizeof(struct Level), sizeof(level) / sizeof(struct Level), f);
     fclose(f);
 
+    /*
     //get firstFreeBox from last element of array
     for (int i = 0; i < 35; i++) {
         for (int j = 5000; j >= 0; --j) {
@@ -522,12 +511,13 @@ int gameLoop() {
             }
         }
     }
+     */
 
-    drawLevel(boxes[part], firstFreeBox[part]);
+    drawLevel(level[part]);
     drawPlayer(playerX, playerY);
 
     clock_gettime(CLOCK_REALTIME, &start);
-    char keys[2] = {'\0', '\0'};
+    char keys[3] = {'\0'};
     char key;
     XEvent e;
     XEvent eTrash;
@@ -553,10 +543,10 @@ int gameLoop() {
         //  KeyReleaseEvent
         if (XCheckIfEvent(d, &e, checkIfKeysReleased, NULL) == True) {
             key = keyPressed(e);
-            if (key == keys[0]) {
-                keys[0] = '\0';
-            } else if (key == keys[1]) {
-                keys[1] = '\0';
+            for (int i = 0; i < 3; i++) {
+                if (key == keys[i]) {
+                    keys[i] = '\0';
+                }
             }
         }
 
@@ -578,54 +568,56 @@ int gameLoop() {
             }
 
             if (key == 'w' || key == 'a' || key == 's' || key == 'd') {
-                if (keys[0] == '\0') {
-                    keys[0] = key;
-                } else if (keys[1] == '\0')
-                    keys[1] = key;
+
+                for (int i = 0; i < 3; i++) {
+                    if (keys[i] == '\0') {
+                        keys[i] = key;
+                        break;
+                    }
+                }
             }
         }
 
-        if (keys[0] != '\0' || keys[1] != '\0') {
+        if (keys[0] != '\0' || keys[1] != '\0' || keys[2] != '\0') {
 
             //Check if player is at borders, and switch scene
             if (playerX == 1000) {
                 part += 1;
                 playerX = 10;
                 playerY = 400;
-                drawLevel(boxes[part], firstFreeBox[part]);
+                drawLevel(level[part]);
                 drawPlayer(playerX, playerY);
 
             } else if (playerX == 0) {
                 part -= 1;
                 playerX = 990;
                 playerY = 400;
-                drawLevel(boxes[part], firstFreeBox[part]);
+                drawLevel(level[part]);
                 drawPlayer(playerX, playerY);
 
             } else if (playerY == 800) {
                 part += 7;
                 playerY = 10;
                 playerX = 500;
-                drawLevel(boxes[part], firstFreeBox[part]);
+                drawLevel(level[part]);
                 drawPlayer(playerX, playerY);
 
             } else if (playerY == 0) {
                 part -= 7;
                 playerY = 770;
                 playerX = 500;
-                drawLevel(boxes[part], firstFreeBox[part]);
+                drawLevel(level[part]);
                 drawPlayer(playerX, playerY);
             }
 
             //  Player Movement
-            if (keys[0] == 'w' || keys[1] == 'w') {
+            if (keys[0] == 'w' || keys[1] == 'w' || keys[2] == 'w') {
                 stopW = 0;
                 if (playerY % TEXTHEIGHT == 0) {
-                    for (int i = 0; i < firstFreeBox[part]; i++) {
-                        if (boxes[part][i].y == playerY &&
-                            boxes[part][i].x < (playerX + TEXTWIDTH * 3) &&
-                            (boxes[part][i].x + TEXTWIDTH) > playerX) {
-                            stopW = 1;
+                    for (int i = 0; i < 4; i++) {
+                        if (level[part][(playerX / TEXTWIDTH) + i][playerY / TEXTHEIGHT].draw == True) {
+                            if (!(i == 3 && playerX % TEXTHEIGHT == 0))
+                                stopW = 1;
                         }
                     }
                 }
@@ -634,53 +626,50 @@ int gameLoop() {
                     lastDirection = 'w';
                 }
             }
-            if (keys[0] == 's' || keys[1] == 's') {
-                stopS = 0;
-                if (playerY % TEXTHEIGHT == 0) {
-                    for (int i = 0; i < firstFreeBox[part]; i++) {
-                        if ((boxes[part][i].y - TEXTHEIGHT) == (playerY + TEXTHEIGHT * 4) &&
-                            boxes[part][i].x < (playerX + TEXTWIDTH * 3) &&
-                            (boxes[part][i].x + TEXTWIDTH) > playerX) {
+        }
+        if (keys[0] == 's' || keys[1] == 's' || keys[2] == 's') {
+            stopS = 0;
+            if (playerY % TEXTHEIGHT == 0) {
+                for (int i = 0; i < 4; i++) {
+                    if (level[part][(playerX / TEXTWIDTH) + i][(playerY / TEXTHEIGHT) + 5].draw == True) {
+                        if (!(i == 3 && playerX % TEXTHEIGHT == 0))
                             stopS = 1;
-                        }
                     }
                 }
-                if (stopS == 0) {
-                    playerY += 2;
-                    lastDirection = 's';
-                }
             }
-            if (keys[0] == 'a' || keys[1] == 'a') {
-                stopA = 0;
-                if (playerX % TEXTWIDTH == 0) {
-                    for (int i = 0; i < firstFreeBox[part]; i++) {
-                        if ((boxes[part][i].x + TEXTWIDTH) == playerX &&
-                            boxes[part][i].y > playerY &&
-                            (boxes[part][i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
+            if (stopS == 0) {
+                playerY += 2;
+                lastDirection = 's';
+            }
+        }
+        if (keys[0] == 'a' || keys[1] == 'a' || keys[2] == 'a') {
+            stopA = 0;
+            if (playerX % TEXTWIDTH == 0) {
+                for (int i = 0; i < 5; i++) {
+                    if (level[part][(playerX / TEXTWIDTH) - 1][(playerY / TEXTHEIGHT) + i + 1].draw == True) {
+                        if (!(i == 4 && playerY % TEXTHEIGHT == 0))
                             stopA = 1;
-                        }
                     }
-                }
-                if (stopA == 0) {
-                    playerX -= 2;
-                    lastDirection = 'a';
                 }
             }
-            if (keys[0] == 'd' || keys[1] == 'd') {
-                stopD = 0;
-                if (playerX % TEXTWIDTH == 0) {
-                    for (int i = 0; i < firstFreeBox[part]; i++) {
-                        if (boxes[part][i].x == (playerX + TEXTWIDTH * 3) &&
-                            boxes[part][i].y > playerY &&
-                            (boxes[part][i].y - TEXTHEIGHT) < (playerY + TEXTHEIGHT * 4)) {
+            if (stopA == 0) {
+                playerX -= 2;
+                lastDirection = 'a';
+            }
+        }
+        if (keys[0] == 'd' || keys[1] == 'd' || keys[2] == 'd') {
+            stopD = 0;
+            if (playerX % TEXTWIDTH == 0) {
+                for (int i = 0; i < 5; i++) {
+                    if (level[part][(playerX / TEXTWIDTH) + 3][(playerY / TEXTHEIGHT) + i + 1].draw == True) {
+                        if (!(i == 4 && playerY % TEXTHEIGHT == 0))
                             stopD = 1;
-                        }
                     }
                 }
-                if (stopD == 0) {
-                    playerX += 2;
-                    lastDirection = 'w';
-                }
+            }
+            if (stopD == 0) {
+                playerX += 2;
+                lastDirection = 'd';
             }
         }
         drawPlayer(playerX, playerY);
@@ -698,20 +687,19 @@ void shoot(int playerX, int playerY, int *firstFreeParticle, char lastDirection,
 
 void updateBullets(int *firstFreeParticle, struct Particle *bullets[50], struct Box boxes[5000], int firstFreeBox) {
     for (int i = 0; i < *firstFreeParticle; i++) {
-            if (bullets[*firstFreeParticle]->direction == 'w') {
-                for (int k = 0; k < 6; k += 2) {    //check for k 0, 2, 4, to make sure no collisions further on in path
-                    if (bullets[*firstFreeParticle]->y % TEXTHEIGHT == 0) {
-                        for (int j = 0; j < firstFreeBox; j++) {
-                            if (boxes[j].y == bullets[*firstFreeParticle]->y - k &&
-                                boxes[j].x < (bullets[*firstFreeParticle]->x + TEXTWIDTH) &&
-                                (boxes[j].x + TEXTWIDTH) > bullets[*firstFreeParticle]->y) {
-                                return;
-                            }
+        if (bullets[*firstFreeParticle]->direction == 'w') {
+            for (int k = 0; k < 6; k += 2) {    //check for k 0, 2, 4, to make sure no collisions further on in path
+                if (bullets[*firstFreeParticle]->y % TEXTHEIGHT == 0) {
+                    for (int j = 0; j < firstFreeBox; j++) {
+                        if (boxes[j].y == bullets[*firstFreeParticle]->y - k &&
+                            boxes[j].x < (bullets[*firstFreeParticle]->x + TEXTWIDTH) &&
+                            (boxes[j].x + TEXTWIDTH) > bullets[*firstFreeParticle]->y) {
+                            return;
                         }
                     }
                 }
-                bullets[*firstFreeParticle]->y -= 5;
             }
+            bullets[*firstFreeParticle]->y -= 5;
         }
     }
 }
@@ -764,7 +752,7 @@ void explosion(int x, int y, int *counter) {
     }
 }
 
-void showSpawner(struct Box *boxes) {
+void showSpawner(struct Level level[167][80]) {
     XClearArea(d, w, 800, 50, 50, 50, False);
     XDrawRectangle(d, w, gc[0], 800, 50, 50, 50);
     char tempText[] = "gun";
@@ -814,12 +802,16 @@ Bool checkIfNotKeyEvent(Display *display, XEvent *e, XPointer arg) {
         return False;
 }
 
-void drawLevel(struct Box *boxes, int firstFreeBox) {
+void drawLevel(struct Level level[167][80]) {
 
     XClearWindow(d, w);
 
-    for (int i = 0; i < firstFreeBox; i++) {
-        XDrawString(d, w, gc[boxes[i].gc], boxes[i].x, boxes[i].y, &boxes[i].character, 1);
+    for (int i = 0; i < 167; i++) {
+        for (int j = 0; j < 80; j++) {
+            if (level[i][j].draw == True) {
+                XDrawString(d, w, gc[level[i][j].gc], i*TEXTWIDTH, j*TEXTHEIGHT, &level[i][j].character, 1);
+            }
+        }
     }
 }
 
