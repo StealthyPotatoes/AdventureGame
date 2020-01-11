@@ -58,6 +58,14 @@ const char title[][100] = {       // ASCII Gen = http://patorjk.com/software/taa
         " |___/                               |___/"
 };
 
+struct BulletList{
+    int x, y;
+    char keys[3];
+    struct BulletList *next;
+};
+
+typedef struct BulletList *bulletNode;
+
 struct Button {
     int x, y, width, height;
 };
@@ -115,6 +123,9 @@ Bool checkIfKeysReleased(Display *display, XEvent *e, XPointer arg);
 Bool checkIfKeyPress(Display *display, XEvent *e, XPointer keys);
 Bool checkIfNotKeyEvent(Display *display, XEvent *e, XPointer arg);
 void explosion(int x, int y, int *counter);
+bulletNode createBulletNode();
+bulletNode addBullet(bulletNode bullets, int playerX, int playerY, char keys[3]);
+bulletNode bulletTick(bulletNode bullets, struct Level level[167][80]);
 
 
 int main(void) {
@@ -183,6 +194,13 @@ int main(void) {
                 break;
         }
     }
+}
+
+bulletNode createBulletNode() {
+    bulletNode temp;
+    temp = (bulletNode)malloc(sizeof(struct BulletList));
+    temp->next = NULL;
+    return temp;
 }
 
 char keyPressed(XEvent e) {      //Returns key pressed
@@ -523,7 +541,8 @@ int gameLoop() {
     XEvent eTrash;
     struct Particle particles[256];
     int firstFreeParticle;
-    char lastDirection;
+    char lastDirection = 'd';
+    bulletNode bullets = NULL;
 
     while (1)       //Main loop
     {
@@ -556,8 +575,10 @@ int gameLoop() {
 
             //  Space key
             if (key == 32) {
-                int counter = 0;
-                explosion(580, 400, &counter);
+                bullets = addBullet(bullets, playerX, playerY, keys);
+
+//                int counter = 0;
+//                explosion(580, 400, &counter);
             }
 
             //  Escape key
@@ -665,6 +686,7 @@ int gameLoop() {
                         if (!(i == 4 && playerY % TEXTHEIGHT == 0))
                             stopD = 1;
                     }
+
                 }
             }
             if (stopD == 0) {
@@ -673,35 +695,141 @@ int gameLoop() {
             }
         }
         drawPlayer(playerX, playerY);
+        bullets = bulletTick(bullets, level[part]);
         XFlush(d);
     }
 }
 
-void shoot(int playerX, int playerY, int *firstFreeParticle, char lastDirection, struct Particle *bullets[50]) {
-    bullets[*firstFreeParticle]->x = playerX + TEXTWIDTH * 2;
-    bullets[*firstFreeParticle]->y = playerY + TEXTHEIGHT * 2;
-    bullets[*firstFreeParticle]->direction = lastDirection;
-    bullets[*firstFreeParticle]->startTime = 0;
-    *firstFreeParticle += 1;
+
+bulletNode addBullet(bulletNode bullets, int playerX, int playerY, char keys[3]) {
+    bulletNode temp, counter;
+    temp = createBulletNode();
+    temp->x = playerX + TEXTWIDTH * 2;
+    temp->y = playerY + TEXTHEIGHT * 2;
+    temp->keys[0] = keys[0];
+    temp->keys[1] = keys[1];
+    temp->keys[2] = keys[2];
+
+    if(bullets == NULL){
+        bullets = temp;    //if list is empty, set first value to temp
+    }
+    else{
+        counter = bullets;
+        while(counter->next != NULL){
+            counter = counter->next;
+        }
+        counter->next = temp;
+    }
+    return bullets;
 }
 
-void updateBullets(int *firstFreeParticle, struct Particle *bullets[50], struct Box boxes[5000], int firstFreeBox) {
-    for (int i = 0; i < *firstFreeParticle; i++) {
-        if (bullets[*firstFreeParticle]->direction == 'w') {
-            for (int k = 0; k < 6; k += 2) {    //check for k 0, 2, 4, to make sure no collisions further on in path
-                if (bullets[*firstFreeParticle]->y % TEXTHEIGHT == 0) {
-                    for (int j = 0; j < firstFreeBox; j++) {
-                        if (boxes[j].y == bullets[*firstFreeParticle]->y - k &&
-                            boxes[j].x < (bullets[*firstFreeParticle]->x + TEXTWIDTH) &&
-                            (boxes[j].x + TEXTWIDTH) > bullets[*firstFreeParticle]->y) {
-                            return;
+bulletNode bulletTick(bulletNode bullets, struct Level level[167][80]) {
+    bulletNode temp, prev, freeNode;
+    char bulletText = '*';
+    freeNode = NULL;
+    prev = NULL;
+    temp = bullets;
+    while (temp != NULL) {
+        while (1) {
+            XClearArea(d, w, temp->x, temp->y - TEXTHEIGHT, TEXTWIDTH, TEXTHEIGHT, 0);
+            if (temp->keys[0] == 'w' || temp->keys[1] == 'w' || temp->keys[2] == 'w') {
+                int i = 0;
+                if (i < 2) {
+                    i++;
+                    if (level[temp->x / TEXTWIDTH + i][temp->y / TEXTHEIGHT - 1].draw == True) {
+                        if (prev == NULL) {
+                            freeNode = temp;
+                            bullets = temp->next;
+                            temp = temp->next;
+                            free(freeNode);
+                            break;
+                        } else {
+                            prev->next = temp->next;
+                            freeNode = temp;
+                            temp = temp->next;
+                            free(freeNode);
+                            break;
                         }
                     }
                 }
+                temp->y -= 5;
             }
-            bullets[*firstFreeParticle]->y -= 5;
+
+            if (temp->keys[0] == 's' || temp->keys[1] == 's' || temp->keys[2] == 's') {
+                int i = 0;
+                if (i < 2) {
+                    i++;
+                    if (level[temp->x / TEXTWIDTH + i][temp->y / TEXTHEIGHT + 1].draw == True) {
+                        if (prev == NULL) {
+                            freeNode = temp;
+                            bullets = temp->next;
+                            temp = temp->next;
+                            free(freeNode);
+                            break;
+                        } else {
+                            prev->next = temp->next;
+                            freeNode = temp;
+                            temp = temp->next;
+                            free(freeNode);
+                            break;
+                        }
+                    }
+                }
+                temp->y += 5;
+            }
+
+            if (temp->keys[0] == 'a' || temp->keys[1] == 'a' || temp->keys[2] == 'a') {
+                int i = 0;
+                if (i < 2) {
+                    i++;
+                    if (level[temp->x / TEXTWIDTH - 1][temp->y / TEXTHEIGHT + i - 1].draw == True) {
+                        if (prev == NULL) {
+                            freeNode = temp;
+                            bullets = temp->next;
+                            temp = temp->next;
+                            free(freeNode);
+                            break;
+                        } else {
+                            prev->next = temp->next;
+                            freeNode = temp;
+                            temp = temp->next;
+                            free(freeNode);
+                            break;
+                        }
+                    }
+                }
+                temp->x -= 5;
+            }
+            if (temp->keys[0] == 'd' || temp->keys[1] == 'd' || temp->keys[2] == 'd') {
+                int i = 0;
+                if (i < 2) {
+                    i++;
+                    if (level[temp->x / TEXTWIDTH + 1][temp->y / TEXTHEIGHT + i - 1].draw == True) {
+                        if (prev == NULL) {
+                            freeNode = temp;
+                            bullets = temp->next;
+                            temp = temp->next;
+                            free(freeNode);
+                            break;
+                        } else {
+                            prev->next = temp->next;
+                            freeNode = temp;
+                            temp = temp->next;
+                            free(freeNode);
+                            break;
+                        }
+                    }
+                }
+                temp->x += 5;
+            }
+
+            XDrawString(d, w, gc[1], temp->x, temp->y, &bulletText, 1);
+            prev = temp;
+            temp = temp->next;
+            break;
         }
     }
+    return bullets;
 }
 
 void explosion(int x, int y, int *counter) {
