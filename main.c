@@ -272,7 +272,7 @@ int menuLoop() {
     {
         XEvent e;
         XNextEvent(d, &e);
-        printf("got event: %s\n", event_names[e.type]);     //Debug tool
+        //printf("got event: %s\n", event_names[e.type]);     //Debug tool
 
         if (e.type == KeyPress) {
             char key = keyPressed(e);
@@ -284,7 +284,7 @@ int menuLoop() {
         }
 
         if (e.type == ButtonPress) {
-            printf("Button XY = %i, %i\n", e.xbutton.x, e.xbutton.y);
+            //printf("Button XY = %i, %i\n", e.xbutton.x, e.xbutton.y);
 
             if (buttons.start.x < e.xbutton.x && e.xbutton.x < (buttons.start.x + buttons.start.width) &&
                 buttons.start.y < e.xbutton.y && e.xbutton.y < (buttons.start.y + buttons.start.height))
@@ -1053,7 +1053,7 @@ void showSpawner(struct Level level[167][80]) {
 }
 
 Bool checkIfKeysReleased(Display *display, XEvent *e, XPointer arg) {
-    printf("got event: %s\n", event_names[e->type]);
+    //printf("got event: %s\n", event_names[e->type]);
 
     if (e->type == 3)
         return True;
